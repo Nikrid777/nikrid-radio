@@ -115,7 +115,7 @@
 <body class="h-[100dvh] flex flex-col select-none relative">
 
   <!-- НАСТОЯЩИЙ АУДИОДВИЖОК -->
-  <audio id="audio-engine" preload="metadata" crossorigin="anonymous"></audio>
+  <audio id="audio-engine" preload="metadata"></audio>
 
   <!-- ФОН (ORBS, CIRCLES, PALM LEAVES) -->
   <div class="fixed top-1/4 left-1/4 w-[50vw] md:w-[30vw] h-[50vw] md:h-[30vw] rounded-full blur-[120px] md:blur-[150px] opacity-[0.05] pointer-events-none transition-colors duration-1000 z-0" style="background-color: var(--neon);"></div>
@@ -553,8 +553,44 @@
     }
 
     // Автономная подгрузка локального playlist.json (для GitHub Pages), если он присутствует
-    async function tryLoadLocalPlaylistJson() {
+async function tryLoadLocalPlaylistJson() {
       try {
+        const res = await fetch('playlist.json', { cache: 'no-store' });
+        if (!res.ok) return;
+        const json = await res.json();
+        if (Array.isArray(json) && json.length > 0) {
+          TRACKS = json.map((item, idx) => {
+            let rawUrl = item.audioUrl || item.url || item.file || '';
+            
+            // Вытаскиваем ID файла
+            const idMatch = rawUrl.match(/[-\w]{25,}/);
+            
+            // Заменяем ЛЮБУЮ ссылку гугл диска на специальный потоковый CORS-совместимый URL
+            if (idMatch) {
+              rawUrl = `https://drive.usercontent.google.com/download?id=${idMatch[0]}&export=download&authuser=0`;
+            }
+
+            return {
+              id: item.id || idx + 1,
+              title: item.title || 'Без названия',
+              artist: item.artist || 'Неизвестный исполнитель',
+              duration: item.duration || '3:30',
+              seconds: item.seconds || 210,
+              moods: Array.isArray(item.moods) ? item.moods : ['Весёлая'],
+              image: item.image || item.cover || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=600&q=80',
+              audioUrl: rawUrl
+            };
+          });
+          state.queue = [...TRACKS];
+          state.customQueueOrder = TRACKS.map(t => t.id);
+          state.currentTrack = TRACKS[0];
+          renderContent();
+          updatePlayerUI();
+        }
+      } catch (e) {
+        // Работаем со встроенным каталогом TRACKS
+      }
+    }      try {
         const res = await fetch('playlist.json', { cache: 'no-store' });
         if (!res.ok) return;
         const json = await res.json();
@@ -586,7 +622,7 @@
       } catch (e) {
         // Работаем со встроенным каталогом TRACKS
       }
-    }
+    
 
     function initAudioEngine() {
       audio.addEventListener('timeupdate', () => {
