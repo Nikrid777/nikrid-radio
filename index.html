@@ -547,6 +547,8 @@
     }
 
     // Подгрузка playlist.json с преобразованием ссылок Google Диска в потоковый формат
+const DRIVE_API_KEY = 'AIzaSyBtgyeKpROB8ulqpLxFVAuS1AmDHovAo84';
+
     async function tryLoadLocalPlaylistJson() {
       try {
         const res = await fetch('playlist.json', { cache: 'no-store' });
@@ -558,7 +560,7 @@
             const idMatch = rawUrl.match(/[-\w]{25,}/);
             const driveId = idMatch ? idMatch[0] : null;
             if (driveId && (rawUrl.includes('drive.google.com') || rawUrl.includes('googleusercontent.com'))) {
-              rawUrl = `https://drive.google.com/uc?export=download&confirm=t&id=${driveId}`;
+              rawUrl = `https://www.googleapis.com/drive/v3/files/${driveId}?alt=media&key=${DRIVE_API_KEY}`;
             }
 
             return {
