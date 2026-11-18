@@ -563,6 +563,40 @@
             let rawUrl = item.audioUrl || item.url || item.file || '';
             const idMatch = rawUrl.match(/[-\w]{25,}/);
             if (idMatch) {
+              // Параметр &confirm=t обходит ORB-блокировку и HTML-предупреждения
+              rawUrl = `https://drive.google.com/uc?export=download&confirm=t&id=${idMatch[0]}`;
+            }
+
+            return {
+              id: item.id || idx + 1,
+              title: item.title || 'Без названия',
+              artist: item.artist || 'Неизвестный исполнитель',
+              duration: item.duration || '3:30',
+              seconds: item.seconds || 210,
+              moods: Array.isArray(item.moods) ? item.moods : ['Весёлая'],
+              image: item.image || item.cover || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=600&q=80',
+              audioUrl: rawUrl
+            };
+          });
+          state.queue = [...TRACKS];
+          state.customQueueOrder = TRACKS.map(t => t.id);
+          state.currentTrack = TRACKS[0];
+          renderContent();
+          updatePlayerUI();
+        }
+      } catch (e) {
+        // Работаем со встроенным каталогом TRACKS
+      }
+    }
+      try {
+        const res = await fetch('playlist.json', { cache: 'no-store' });
+        if (!res.ok) return;
+        const json = await res.json();
+        if (Array.isArray(json) && json.length > 0) {
+          TRACKS = json.map((item, idx) => {
+            let rawUrl = item.audioUrl || item.url || item.file || '';
+            const idMatch = rawUrl.match(/[-\w]{25,}/);
+            if (idMatch) {
               rawUrl = `https://docs.google.com/uc?export=open&id=${idMatch[0]}`;
             }
 
