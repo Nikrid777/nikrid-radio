@@ -114,7 +114,7 @@
 </head>
 <body class="h-[100dvh] flex flex-col select-none relative">
 
-  <!-- НАСТОЯЩИЙ АУДИОДВИЖОК -->  
+  <!-- НАСТОЯЩИЙ АУДИОДВИЖОК (без crossorigin для совместимости с Google Drive) -->
   <audio id="audio-engine" preload="metadata"></audio>
 
   <!-- ФОН (ORBS, CIRCLES, PALM LEAVES) -->
@@ -451,20 +451,20 @@
       isMuted: false,
       fallbackTimerId: null,
       usingFallbackTimer: false,
+      retriedAltUrl: false,
       bufferLikes: [],
       bufferDislikes: [],
-      history: [TRACKS[11], TRACKS[12], TRACKS[9], TRACKS[13], TRACKS[10], TRACKS[14]], // Настоящая история прослушиваний
+      history: [TRACKS[11], TRACKS[12], TRACKS[9], TRACKS[13], TRACKS[10], TRACKS[14]],
       repeat: false,
       shuffle: false,
       isSongPageOpen: false,
       mobileSongView: 'cover',
       queue: [...TRACKS],
-      customQueueOrder: TRACKS.map(t => t.id) // Пользовательский порядок очереди (сохраняется при отключении Shuffle)
+      customQueueOrder: TRACKS.map(t => t.id)
     };
 
     const audio = document.getElementById('audio-engine');
 
-    // Генератор красивой SVG-заглушки, если нет интернета или обложка не загрузилась
     function handleImgError(imgEl) {
       imgEl.onerror = null;
       imgEl.src = "data:image/svg+xml;utf8," + encodeURIComponent(`
@@ -482,7 +482,6 @@
       `);
     }
 
-    // Сохранение состояния в localStorage
     function saveState() {
       try {
         const payload = {
@@ -501,12 +500,9 @@
           queueIds: state.queue.map(t => t.id)
         };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-      } catch (e) {
-        // Игнорируем ограничения приватного режима
-      }
+      } catch (e) {}
     }
 
-    // Восстановление состояния из localStorage
     function loadState() {
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
@@ -547,12 +543,10 @@
           const found = TRACKS.find(t => t.id === data.currentTrackId);
           if (found) state.currentTrack = found;
         }
-      } catch (e) {
-        // Fallback к дефолтному состоянию
-      }
+      } catch (e) {}
     }
 
-    // Автономная подгрузка локального playlist.json (для GitHub Pages), если он присутствует
+    // Подгрузка playlist.json с преобразованием ссылок Google Диска в потоковый формат
     async function tryLoadLocalPlaylistJson() {
       try {
         const res = await fetch('playlist.json', { cache: 'no-store' });
@@ -562,13 +556,14 @@
           TRACKS = json.map((item, idx) => {
             let rawUrl = item.audioUrl || item.url || item.file || '';
             const idMatch = rawUrl.match(/[-\w]{25,}/);
-            if (idMatch) {
-              // Параметр &confirm=t обходит ORB-блокировку и HTML-предупреждения
-              rawUrl = `https://drive.google.com/uc?export=download&confirm=t&id=${idMatch[0]}`;
+            const driveId = idMatch ? idMatch[0] : null;
+            if (driveId && (rawUrl.includes('drive.google.com') || rawUrl.includes('googleusercontent.com'))) {
+              rawUrl = `https://drive.google.com/uc?export=download&confirm=t&id=${driveId}`;
             }
 
             return {
               id: item.id || idx + 1,
+              driveId: driveId,
               title: item.title || 'Без названия',
               artist: item.artist || 'Неизвестный исполнитель',
               duration: item.duration || '3:30',
@@ -584,43 +579,8 @@
           renderContent();
           updatePlayerUI();
         }
-      } catch (e) {
-        // Работаем со встроенным каталогом TRACKS
-      }
+      } catch (e) {}
     }
-      try {
-        const res = await fetch('playlist.json', { cache: 'no-store' });
-        if (!res.ok) return;
-        const json = await res.json();
-        if (Array.isArray(json) && json.length > 0) {
-          TRACKS = json.map((item, idx) => {
-            let rawUrl = item.audioUrl || item.url || item.file || '';
-            const idMatch = rawUrl.match(/[-\w]{25,}/);
-            if (idMatch) {
-              rawUrl = `https://docs.google.com/uc?export=open&id=${idMatch[0]}`;
-            }
-
-            return {
-              id: item.id || idx + 1,
-              title: item.title || 'Без названия',
-              artist: item.artist || 'Неизвестный исполнитель',
-              duration: item.duration || '3:30',
-              seconds: item.seconds || 210,
-              moods: Array.isArray(item.moods) ? item.moods : ['Весёлая'],
-              image: item.image || item.cover || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=600&q=80',
-              audioUrl: rawUrl
-            };
-          });
-          state.queue = [...TRACKS];
-          state.customQueueOrder = TRACKS.map(t => t.id);
-          state.currentTrack = TRACKS[0];
-          renderContent();
-          updatePlayerUI();
-        }
-      } catch (e) {
-        // Работаем со встроенным каталогом TRACKS
-      }
-  
 
     function initAudioEngine() {
       audio.addEventListener('timeupdate', () => {
@@ -648,7 +608,15 @@
       });
 
       audio.addEventListener('error', () => {
-        // Если аудиопоток недоступен оффлайн — бесшовно включаем резервный движок времени
+        if (state.isPlaying && state.currentTrack && state.currentTrack.driveId && !state.retriedAltUrl) {
+          state.retriedAltUrl = true;
+          audio.src = `https://drive.usercontent.google.com/download?id=${state.currentTrack.driveId}&export=download&confirm=t`;
+          audio.play().catch(() => {
+            state.usingFallbackTimer = true;
+            startFallbackTimer();
+          });
+          return;
+        }
         if (state.isPlaying) {
           state.usingFallbackTimer = true;
           startFallbackTimer();
@@ -661,7 +629,6 @@
       initAudioEngine();
       tryLoadLocalPlaylistJson();
 
-      // Закрытие выпадающих меню по клику вне
       document.addEventListener('click', (e) => {
         if (!e.target.closest('#moodMenuWrapper')) {
           document.getElementById('moodMenu').classList.add('hidden');
@@ -674,7 +641,6 @@
         }
       });
 
-      // Горячие клавиши
       document.addEventListener('keydown', (e) => {
         if (document.activeElement === document.getElementById('searchInput')) return;
         if (e.code === 'Space') {
@@ -689,7 +655,6 @@
         }
       });
 
-      // Применяем сохраненные флаги Repeat и Shuffle к UI
       syncToggleButtonsUI();
       renderContent();
       updatePlayerUI();
@@ -712,7 +677,6 @@
       renderContent();
     }
 
-    // Реальная фильтрация треков по выбранному настроению
     function getFilteredTracksByMood(moodName) {
       if (!moodName || moodName === 'Все настроения') return [...TRACKS];
       const exact = TRACKS.filter(t => Array.isArray(t.moods) && t.moods.includes(moodName));
@@ -779,15 +743,12 @@
       }
 
       if (state.activeTab === 'wave') {
-        // Реальная фильтрация рекомендаций по настроению
         const moodTracks = getFilteredTracksByMood(state.mood);
         const recommendations = moodTracks.slice(0, 9);
         const recentlyPlayed = state.history.slice(0, 6);
         
         container.innerHTML = `
           <div class="w-full max-w-[1600px] mx-auto">
-            
-            <!-- БАННЕР "МОЯ ВОЛНА" -->
             <div class="relative w-full rounded-[2rem] bg-white/[0.03] overflow-hidden mb-7 sm:mb-10 flex items-center justify-between p-5 sm:p-8 shadow-2xl backdrop-blur-md">
               <div class="absolute right-0 top-0 w-2/3 h-full bg-gradient-to-l from-[var(--neon)]/15 to-transparent pointer-events-none transition-colors duration-500"></div>
               
@@ -807,7 +768,6 @@
                 </button>
               </div>
 
-              <!-- Визуализация потока -->
               <div class="relative z-10 flex items-center gap-1.5 sm:gap-2.5 mr-1 sm:mr-6 opacity-90 shrink-0">
                 <div class="w-1.5 sm:w-2.5 h-5 rounded-full neon-bg transition-all duration-500"></div>
                 <div class="w-1.5 sm:w-2.5 h-8 sm:h-9 rounded-full neon-bg transition-all duration-500"></div>
@@ -817,7 +777,6 @@
               </div>
             </div>
 
-            <!-- Рекомендации (отфильтрованные по настроению) -->
             <div class="mb-8 sm:mb-12">
               <div class="flex items-baseline justify-between mb-3.5 sm:mb-6 px-1">
                 <h2 class="text-lg sm:text-2xl font-bold tracking-tight drop-shadow-md">Рекомендации</h2>
@@ -828,7 +787,6 @@
               </div>
             </div>
             
-            <!-- Недавно прослушанные (Живая история) -->
             <div>
               <div class="flex items-baseline justify-between mb-3.5 sm:mb-6 px-1">
                 <h2 class="text-lg sm:text-2xl font-bold tracking-tight drop-shadow-md text-white/80">Недавно прослушанные</h2>
@@ -875,7 +833,6 @@
       }
     }
 
-    // Запуск потока «Моей волны» с учетом выбранного настроения
     function startWaveStream() {
       const moodTracks = getFilteredTracksByMood(state.mood);
       const isCurrentInMood = moodTracks.some(t => t.id === (state.currentTrack && state.currentTrack.id));
@@ -892,7 +849,6 @@
       }
     }
 
-    // Карточка для сетки (Квадратная скругленная обложка вместо круга)
     function renderGridCard(track) {
       const isCur = track.id === state.currentTrack.id;
       return `
@@ -912,7 +868,6 @@
       `;
     }
 
-    // Строка-панель для списков (Квадратная скругленная обложка + цвет лайка от темы)
     function renderListRow(track) {
       const isCur = track.id === state.currentTrack.id;
       const isLiked = state.bufferLikes.some(t => t.id === track.id);
@@ -947,7 +902,6 @@
       `;
     }
 
-    // Автономный поиск с квадратными обложками
     function handleSearch(query) {
       const q = query.toLowerCase().trim();
       const dropdown = document.getElementById('searchDropdown');
@@ -985,13 +939,11 @@
       document.getElementById('searchDropdown').classList.add('hidden');
     }
 
-    // Добавление трека в настоящую историю прослушиваний
     function recordTrackInHistory(track) {
       if (!track) return;
       state.history = [track, ...state.history.filter(t => t.id !== track.id)].slice(0, 8);
     }
 
-    // Запуск трека через настоящий аудиодвижок
     function playTrack(id, recordHistory = true) {
       const found = state.queue.find(t => t.id === id) || TRACKS.find(t => t.id === id);
       if (!found) return;
@@ -1000,6 +952,7 @@
       state.progress = 0;
       state.isPlaying = true;
       state.usingFallbackTimer = false;
+      state.retriedAltUrl = false;
       clearInterval(state.fallbackTimerId);
 
       if (recordHistory) {
@@ -1015,8 +968,17 @@
         const playPromise = audio.play();
         if (playPromise !== undefined) {
           playPromise.catch(() => {
-            state.usingFallbackTimer = true;
-            startFallbackTimer();
+            if (found.driveId && !state.retriedAltUrl) {
+              state.retriedAltUrl = true;
+              audio.src = `https://drive.usercontent.google.com/download?id=${found.driveId}&export=download&confirm=t`;
+              audio.play().catch(() => {
+                state.usingFallbackTimer = true;
+                startFallbackTimer();
+              });
+            } else {
+              state.usingFallbackTimer = true;
+              startFallbackTimer();
+            }
           });
         }
       } else {
@@ -1183,7 +1145,6 @@
       }
     }
 
-    // Резервный таймер на случай отсутствия интернета или блокировки внешнего аудио
     function startFallbackTimer() {
       clearInterval(state.fallbackTimerId);
       state.fallbackTimerId = setInterval(() => {
@@ -1221,7 +1182,6 @@
       document.getElementById('player-cover-img').src = t.image;
       document.getElementById('time-total').textContent = t.duration;
       
-      // Обновление полноэкранной страницы открытого трека
       document.getElementById('sp-cover-img').src = t.image;
       document.getElementById('sp-main-title').textContent = t.title;
       document.getElementById('sp-main-artist').textContent = t.artist;
@@ -1241,7 +1201,6 @@
       const isLiked = state.bufferLikes.some(track => track.id === t.id);
       const isDisliked = state.bufferDislikes.some(track => track.id === t.id);
 
-      // Цвет лайка привязан к выбранной теме var(--neon)
       const likeSvg = isLiked 
         ? '<svg class="w-5 h-5 neon-color" fill="currentColor" viewBox="0 0 24 24"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg>'
         : '<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg>';
@@ -1293,12 +1252,10 @@
       saveState();
     }
 
-    // При отключении Shuffle восстанавливается пользовательский порядок customQueueOrder
     function toggleShuffle() {
       state.shuffle = !state.shuffle;
       
       if (state.shuffle) {
-        // Сохраняем текущий пользовательский порядок перед перемешиванием
         state.customQueueOrder = state.queue.map(t => t.id);
         const others = state.queue.filter(t => t.id !== state.currentTrack.id);
         for (let i = others.length - 1; i > 0; i--) {
@@ -1307,7 +1264,6 @@
         }
         state.queue = [state.currentTrack, ...others];
       } else {
-        // Восстанавливаем сохраненный пользовательский порядок
         const restored = state.customQueueOrder
           .map(id => TRACKS.find(t => t.id === id))
           .filter(Boolean);
@@ -1342,7 +1298,6 @@
       }
     }
 
-    // Сохранение пользовательского порядка при перемещении треков в очереди
     function moveQueueItem(index, direction) {
       const targetIndex = index + direction;
       if (targetIndex < 0 || targetIndex >= state.queue.length) return;
@@ -1356,9 +1311,6 @@
       renderQueue();
     }
 
-    // ==========================================
-    // ЖИВОЙ АУДИО-ВИЗУАЛИЗАТОР НА ЭКРАНЕ ПЕСНИ
-    // ==========================================
     function startVisualizerLoop() {
       const canvas = document.getElementById('audio-visualizer');
       if (!canvas) return;
@@ -1400,9 +1352,6 @@
       requestAnimationFrame(draw);
     }
 
-    // ==========================================
-    // LOGIC FOR DRAG & DROP QUEUE (YTM STYLE)
-    // ==========================================
     let draggedItem = null;
 
     function handleDragStart(e) {
@@ -1446,7 +1395,6 @@
         const [removed] = state.queue.splice(draggedIdx, 1);
         state.queue.splice(targetIdx, 0, removed);
 
-        // Обновляем пользовательский порядок очереди
         state.customQueueOrder = state.queue.map(t => t.id);
         saveState();
         renderQueue();
