@@ -639,7 +639,7 @@
     }
 
     async function cacheTrackCover(track) {
-      if (!('caches' in window) || !track || !track.image || !navigator.onLine) return;
+      if (!('caches' in window) || !track || !track.image || !navigator.onLine || state._coverFetchBlocked) return;
       const key = getCoverCacheKey(track);
       try {
         const cache = await caches.open(COVER_CACHE_NAME);
@@ -655,7 +655,9 @@
             coverBlobCache.set(key, URL.createObjectURL(blob));
           }
         }
-      } catch (e) {}
+      } catch (e) {
+        state._coverFetchBlocked = true;
+      }
     }
 
     async function resolveOfflineCover(imgEl, track) {
@@ -794,10 +796,11 @@
 
       // Последовательно подгружаем недостающие треки (не перегружая сеть при VPN)
       for (const track of targetTracks) {
-        if (!navigator.onLine) break;
+        if (!navigator.onLine || state._driveCorsBlocked) break;
         cacheTrackCover(track);
         if (!state.cachedTrackIds.has(track.id)) {
-          await fetchAndCacheTrack(track);
+          const ok = await fetchAndCacheTrack(track);
+          if (!ok && state._driveCorsBlocked) break;
         }
       }
     }
@@ -1893,7 +1896,7 @@
       if (found.audioUrl) {
         scheduleStallWatchdog();
         await startAudioSource(found.audioUrl, reqId);
-        setTimeout(() => { prefetchNextTracks(); }, 50);
+        if (!state._driveCorsBlocked) setTimeout(() => { prefetchNextTracks(); }, 50);
       }
     }
 
