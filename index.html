@@ -10,7 +10,7 @@
   
   <style>
     :root {
-      --neon: #10B981; /* Default emerald */
+      --neon: #10B981;
       --bg-base: #000000;
     }
 
@@ -23,10 +23,10 @@
       background-color: var(--bg-base);
       color: #ffffff;
       font-family: 'Inter', sans-serif;
-      overflow: hidden; 
+      overflow: hidden;
+      overscroll-behavior-y: contain;
     }
 
-    /* Полное отключение любых системных рамок и обводок во всех состояниях */
     button, input {
       border: 0 !important;
       outline: none !important;
@@ -40,14 +40,12 @@
       border: 0 !important;
     }
 
-    /* Чёткий рендеринг обложек */
     img {
       image-rendering: -webkit-optimize-contrast;
       backface-visibility: hidden;
       transform: translateZ(0);
     }
 
-    /* Динамические Неоновые Классы */
     .neon-text { color: var(--neon); text-shadow: 0 0 12px var(--neon); }
     .neon-bg { background-color: var(--neon); box-shadow: 0 0 15px var(--neon); }
     .neon-color { color: var(--neon); }
@@ -57,7 +55,6 @@
       font-weight: 800;
     }
 
-    /* Кнопки навигации */
     .nav-btn {
       background-color: transparent;
       color: rgba(255, 255, 255, 0.5);
@@ -82,7 +79,6 @@
       fill: none;
     }
 
-    /* Невидимый слой для мгновенного захвата ползунков мышью и пальцем */
     .range-overlay {
       -webkit-appearance: none;
       appearance: none;
@@ -98,13 +94,11 @@
       touch-action: none;
     }
 
-    /* Мгновенный отклик прогресс-бара без отставания полоски от кружка */
     #progress-fill, #progress-thumb, #vol-fill, #vol-thumb {
       transition: none !important;
       will-change: width, left;
     }
 
-    /* Удобное перетаскивание треков в очереди: дочерние элементы не мешают курсору */
     .queue-item * {
       pointer-events: none;
     }
@@ -114,10 +108,24 @@
     .queue-item.dragging-active {
       opacity: 0.35;
       background-color: rgba(255, 255, 255, 0.16) !important;
-      border: 1px dashed var(--neon);
+      box-shadow: inset 0 0 0 1px var(--neon);
     }
 
-    /* Scrollbar */
+    /* Pull-to-refresh индикатор */
+    #ptr-indicator {
+      transition: transform 0.18s ease, opacity 0.18s ease;
+      will-change: transform, opacity;
+    }
+
+    /* Тосты уведомлений и ошибок */
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateY(-16px) scale(0.96); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .toast-item {
+      animation: toastIn 0.22s ease-out forwards;
+    }
+
     ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 10px; }
@@ -126,10 +134,22 @@
 </head>
 <body class="h-[100dvh] flex flex-col select-none relative">
 
-  <!-- НАСТОЯЩИЙ АУДИОДВИЖОК -->
   <audio id="audio-engine" preload="metadata"></audio>
 
-  <!-- ФОН (ORBS, CIRCLES, PALM LEAVES) -->
+  <!-- PULL-TO-REFRESH ИНДИКАТОР (Мобильный свайп вниз) -->
+  <div id="ptr-indicator" class="fixed top-2 left-1/2 -translate-x-1/2 z-[70] pointer-events-none opacity-0 -translate-y-12">
+    <div class="flex items-center gap-2.5 px-4 py-2 rounded-full bg-[#0D0D0D]/95 backdrop-blur-2xl shadow-[0_8px_30px_rgba(0,0,0,0.9)]">
+      <svg id="ptr-spinner" class="w-4 h-4 text-[var(--neon)] transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+      </svg>
+      <span id="ptr-text" class="text-xs font-semibold text-white/90">Потяните для обновления</span>
+    </div>
+  </div>
+
+  <!-- КОНТЕЙНЕР ОШИБОК И УВЕДОМЛЕНИЙ (Десктоп + Мобильный) -->
+  <div id="toast-container" class="fixed top-4 left-1/2 -translate-x-1/2 z-[80] w-[92%] max-w-md flex flex-col gap-2 pointer-events-none"></div>
+
+  <!-- ФОНОВЫЕ ЭФФЕКТЫ -->
   <div class="fixed top-1/4 left-1/4 w-[50vw] md:w-[30vw] h-[50vw] md:h-[30vw] rounded-full blur-[120px] md:blur-[150px] opacity-[0.05] pointer-events-none transition-colors duration-1000 z-0" style="background-color: var(--neon);"></div>
   <div class="fixed bottom-1/4 right-1/4 w-[60vw] md:w-[40vw] h-[60vw] md:h-[40vw] rounded-full blur-[120px] md:blur-[150px] opacity-[0.05] pointer-events-none transition-colors duration-1000 z-0" style="background-color: var(--neon);"></div>
   
@@ -143,19 +163,23 @@
     <path d="M200 200 C 170 170, 130 140, 50 150 C 90 160, 150 180, 185 195 Z" />
   </svg>
 
-  <!-- ВЕРХНЯЯ ПАНЕЛЬ (HEADER) -->
+  <!-- ВЕРХНЯЯ ПАНЕЛЬ -->
   <header class="shrink-0 flex flex-wrap lg:flex-nowrap items-center justify-between px-4 sm:px-8 pt-3 pb-2.5 lg:py-0 lg:h-24 gap-y-2.5 relative z-30">
-    <!-- Логотип Nikrid -->
-    <div class="order-1 lg:w-1/4 flex items-center">
+    <div class="order-1 lg:w-1/4 flex items-center gap-3">
       <div class="flex items-center gap-2.5 sm:gap-3 cursor-pointer" onclick="switchTab('wave'); toggleSongPage(false);">
         <svg class="w-8 h-8 sm:w-9 sm:h-9 neon-text transition-colors duration-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M4 22V8m4 14V4m4 18v-8m4 8V10m4 12V2"/>
         </svg>
         <span class="font-extrabold text-xl sm:text-2xl tracking-[0.2em] uppercase neon-text transition-colors duration-500">Nikrid</span>
       </div>
+      <!-- Индикатор сети / кэша -->
+      <div id="net-status-pill" class="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 text-[10px] font-semibold text-white/60">
+        <span id="net-status-dot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+        <span id="net-status-text">Кэш: 0/6</span>
+      </div>
     </div>
 
-    <!-- ПОИСКОВИК -->
+    <!-- ПОИСК -->
     <div class="order-3 lg:order-2 w-full lg:w-auto lg:flex-1 lg:max-w-lg lg:mx-auto z-40" id="searchContainer">
       <div class="relative flex items-center group w-full">
         <svg class="w-4 h-4 sm:w-5 sm:h-5 absolute left-4 sm:left-5 text-white/50 group-focus-within:text-white transition-colors pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -167,34 +191,40 @@
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
       </div>
-      <!-- Выпадающий список -->
       <div id="searchDropdown" class="hidden absolute left-4 right-4 lg:left-1/2 lg:-translate-x-1/2 lg:w-full lg:max-w-lg mt-2 rounded-[1.75rem] bg-[#0A0A0A]/95 backdrop-blur-2xl py-2.5 z-50 max-h-80 overflow-y-auto shadow-[0_15px_40px_rgba(0,0,0,0.95)]">
         <div id="searchResults" class="flex flex-col"></div>
       </div>
     </div>
 
-    <!-- Меню Настроений и Цветов -->
-    <div class="order-2 lg:order-3 lg:w-1/4 flex items-center justify-end gap-2 sm:gap-3 relative z-50">
+    <!-- КНОПКИ СПРАВА: Синхронизация, Тема «Весёлая», Цвет -->
+    <div class="order-2 lg:order-3 lg:w-1/4 flex items-center justify-end gap-2 sm:gap-2.5 relative z-50">
+      <!-- Облачная синхронизация буфера -->
+      <button type="button" onclick="openSyncModal()" id="btn-sync-cloud" title="Облачная синхронизация лайков/дизлайков" class="flex items-center gap-1.5 px-3 sm:px-3.5 py-2 sm:py-2.5 rounded-full bg-white/5 hover:bg-white/10 active:bg-white/15 transition-colors text-xs font-medium text-white/70 hover:text-white">
+        <svg id="sync-icon" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/>
+        </svg>
+        <span class="hidden xl:inline" id="sync-btn-label">Синхр.</span>
+      </button>
+
+      <!-- Тема: сейчас работаем только с «Весёлая» -->
       <div class="relative" id="moodMenuWrapper">
-        <button type="button" onclick="toggleMenu('moodMenu')" class="flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-full bg-white/5 hover:bg-white/10 active:bg-white/15 transition-colors text-xs sm:text-sm font-medium">
-          <span id="currentMoodLabel" class="truncate max-w-[110px] sm:max-w-none">Весёлая</span>
-          <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white/50 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        <button type="button" onclick="toggleMenu('moodMenu')" class="flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-full bg-white/5 hover:bg-white/10 active:bg-white/15 transition-colors text-xs sm:text-sm font-medium">
+          <span id="currentMoodLabel" class="truncate max-w-[90px] sm:max-w-none">Весёлая</span>
+          <svg class="w-3.5 h-3.5 text-white/50 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
         </button>
-        <div id="moodMenu" class="hidden absolute top-full right-0 mt-2.5 w-52 rounded-[1.75rem] bg-[#0A0A0A]/95 backdrop-blur-2xl py-2.5 z-50 shadow-[0_15px_40px_rgba(0,0,0,0.95)]">
-          <button type="button" onclick="selectMood('Все настроения')" class="w-full text-left px-5 py-2.5 text-xs sm:text-sm text-white/70 hover:text-white hover:bg-white/10 transition-colors">Все настроения</button>
-          <button type="button" onclick="selectMood('Весёлая')" class="w-full text-left px-5 py-2.5 text-xs sm:text-sm hover:bg-white/10 transition-colors">Весёлая</button>
-          <button type="button" onclick="selectMood('Грустная')" class="w-full text-left px-5 py-2.5 text-xs sm:text-sm hover:bg-white/10 transition-colors">Грустная</button>
-          <button type="button" onclick="selectMood('Официальная')" class="w-full text-left px-5 py-2.5 text-xs sm:text-sm hover:bg-white/10 transition-colors">Официальная</button>
-          <button type="button" onclick="selectMood('На фоне')" class="w-full text-left px-5 py-2.5 text-xs sm:text-sm hover:bg-white/10 transition-colors">На фоне</button>
-          <button type="button" onclick="selectMood('Тяжёлая')" class="w-full text-left px-5 py-2.5 text-xs sm:text-sm hover:bg-white/10 transition-colors">Тяжёлая</button>
-          <button type="button" onclick="selectMood('Русские весёлые')" class="w-full text-left px-5 py-2.5 text-xs sm:text-sm hover:bg-white/10 transition-colors">Русские весёлые</button>
+        <div id="moodMenu" class="hidden absolute top-full right-0 mt-2.5 w-48 rounded-[1.75rem] bg-[#0A0A0A]/95 backdrop-blur-2xl py-2.5 z-50 shadow-[0_15px_40px_rgba(0,0,0,0.95)]">
+          <button type="button" onclick="selectMood('Весёлая')" class="w-full text-left px-5 py-2.5 text-xs sm:text-sm text-[var(--neon)] font-semibold hover:bg-white/10 transition-colors flex items-center justify-between">
+            <span>Весёлая</span>
+            <span class="w-2 h-2 rounded-full neon-bg"></span>
+          </button>
         </div>
       </div>
 
+      <!-- Цветовая схема -->
       <div class="relative" id="colorMenuWrapper">
-        <button type="button" onclick="toggleMenu('colorMenu')" class="flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-full bg-white/5 hover:bg-white/10 active:bg-white/15 transition-colors text-xs sm:text-sm font-medium">
+        <button type="button" onclick="toggleMenu('colorMenu')" class="flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-full bg-white/5 hover:bg-white/10 active:bg-white/15 transition-colors text-xs sm:text-sm font-medium">
           <span class="w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full transition-colors duration-500 neon-bg"></span>
-          <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white/50 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          <svg class="w-3.5 h-3.5 text-white/50 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
         </button>
         <div id="colorMenu" class="hidden absolute top-full right-0 mt-2.5 w-52 rounded-[1.75rem] bg-[#0A0A0A]/95 backdrop-blur-2xl py-2.5 z-50 shadow-[0_15px_40px_rgba(0,0,0,0.95)]">
           <button type="button" onclick="selectTheme('#E879C5')" class="w-full flex items-center gap-3.5 px-5 py-2.5 text-xs sm:text-sm hover:bg-white/10 transition-colors"><span class="w-3 h-3 rounded-full bg-[#E879C5]"></span> Обсидиан</button>
@@ -208,10 +238,38 @@
     </div>
   </header>
 
+  <!-- МОДАЛЬНОЕ ОКНО ОБЛАЧНОЙ СИНХРОНИЗАЦИИ (GitHub Gist) -->
+  <div id="sync-modal" class="hidden fixed inset-0 z-[90] bg-black/80 backdrop-blur-xl flex items-center justify-center p-4">
+    <div class="w-full max-w-md rounded-[2rem] bg-[#0B0B0B] p-6 sm:p-7 shadow-[0_25px_70px_rgba(0,0,0,0.95)] relative">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-extrabold text-white">Облачная синхронизация</h3>
+        <button type="button" onclick="closeSyncModal()" class="p-2 rounded-full bg-white/5 hover:bg-white/10 text-white/60 hover:text-white">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <p class="text-xs text-white/55 mb-4 leading-relaxed">
+        Синхронизирует буфер лайков, дизлайков и прослушанные треки «Моей волны» между телефоном, ПК и скриптом <code class="text-white/80">core.py</code> через приватный GitHub Gist. Токен хранится только локально на этом устройстве.
+      </p>
+      <div class="flex flex-col gap-3">
+        <div>
+          <label class="block text-[11px] font-semibold text-white/50 mb-1.5 uppercase tracking-wider">GitHub Token (scope: gist)</label>
+          <input type="password" id="sync-token-input" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" class="w-full h-11 px-4 rounded-2xl bg-white/5 focus:bg-white/10 text-xs text-white placeholder-white/30">
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-white/50 mb-1.5 uppercase tracking-wider">Gist ID (оставьте пустым для автосоздания)</label>
+          <input type="text" id="sync-gist-input" placeholder="Автоматически создастся приватный Gist" class="w-full h-11 px-4 rounded-2xl bg-white/5 focus:bg-white/10 text-xs text-white placeholder-white/30">
+        </div>
+        <div id="sync-status-info" class="text-[11px] text-white/45 min-h-[16px]"></div>
+        <div class="flex gap-2.5 mt-2">
+          <button type="button" onclick="saveAndTestCloudSync()" class="flex-1 py-3 rounded-full neon-bg text-black text-xs font-extrabold hover:brightness-110 active:scale-95 transition">Сохранить и синхронизировать</button>
+          <button type="button" onclick="pullCloudState(true)" class="px-4 py-3 rounded-full bg-white/10 text-white text-xs font-bold hover:bg-white/15 active:scale-95 transition">Обновить</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ЦЕНТРАЛЬНАЯ ЧАСТЬ -->
   <div class="flex flex-1 overflow-hidden z-10 relative">
-    
-    <!-- ЛЕВАЯ ПАНЕЛЬ (Sidebar) -->
     <aside class="hidden md:flex w-64 lg:w-72 shrink-0 flex-col p-6 gap-2">
       <nav class="flex flex-col gap-2 mt-2">
         <button type="button" onclick="switchTab('wave')" id="tab-wave" class="nav-btn neon-nav-active flex items-center gap-4 px-5 py-3.5 rounded-full font-medium">
@@ -235,10 +293,7 @@
       </nav>
     </aside>
 
-    <!-- КОНТЕНТ -->
-    <main id="main-content" class="flex-1 overflow-y-scroll px-3.5 sm:px-8 lg:px-10 py-2 sm:py-6 pb-[165px] md:pb-36">
-      <!-- Контент рендерится через JS -->
-    </main>
+    <main id="main-content" class="flex-1 overflow-y-scroll px-3.5 sm:px-8 lg:px-10 py-2 sm:py-6 pb-[165px] md:pb-36"></main>
   </div>
 
   <!-- МОБИЛЬНАЯ НАВИГАЦИЯ -->
@@ -261,10 +316,8 @@
     </button>
   </nav>
 
-  <!-- СТРАНИЦА ОТКРЫТОГО ТРЕКА -->
+  <!-- СТРАНИЦА ТРЕКА -->
   <div id="song-page" class="fixed inset-0 z-40 bg-[#000000]/95 backdrop-blur-3xl flex flex-col lg:flex-row transition-transform duration-500 ease-out translate-y-full pt-3 sm:pt-6 lg:pt-20 pb-[96px] md:pb-[125px] px-4 sm:px-8 md:px-14 overflow-hidden">
-    
-    <!-- Мобильная шапка страницы песни -->
     <div class="flex lg:hidden items-center justify-between w-full mb-3 px-1 shrink-0">
       <button type="button" onclick="toggleSongPage(false)" class="p-2.5 rounded-full bg-white/5 text-white active:scale-95 transition">
         <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M16.59 8.59L12 13.17 7.41 8.59 6 10l6 6 6-6z"/></svg>
@@ -279,24 +332,21 @@
     </div>
 
     <div class="w-full flex-1 max-w-[1550px] mx-auto flex flex-col lg:flex-row items-center gap-6 lg:gap-14 overflow-hidden">
-      
-      <!-- Left: Крупная обложка (неподвижная) + Живая светомузыка позади неё -->
       <div id="sp-left-panel" class="flex lg:!flex flex-1 flex-col items-center justify-center w-full h-full overflow-hidden">
-        
         <div class="relative flex items-center justify-center my-4">
-          <!-- Динамическая тень-светомузыка позади обложки (управляется из JS) -->
           <div id="sp-cover-glow" class="absolute -inset-6 rounded-[2.8rem] opacity-30 blur-2xl pointer-events-none will-change-transform" style="background: var(--neon);"></div>
           
-          <!-- Сама обложка теперь стоит чётко и неподвижно -->
           <div id="sp-cover-wrap" class="relative w-[54vw] h-[54vw] max-w-[240px] max-h-[240px] sm:max-w-[310px] sm:max-h-[310px] lg:max-w-[430px] lg:max-h-[430px] lg:w-[44vh] lg:h-[44vh] rounded-[2rem] overflow-hidden shadow-[0_25px_70px_rgba(0,0,0,0.9)] bg-white/5 shrink-0 z-10">
             <img id="sp-cover-img" src="" alt="Album Cover" class="w-full h-full object-cover" onerror="handleImgError(this)">
             <div id="sp-cover-mood" class="absolute top-3.5 left-3.5 px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-black/65 backdrop-blur-md text-[var(--neon)]">
               Весёлая
             </div>
+            <div id="sp-cache-badge" class="hidden absolute top-3.5 right-3.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-black/65 backdrop-blur-md text-emerald-400">
+              OFFLINE READY
+            </div>
           </div>
         </div>
 
-        <!-- Информация о текущей песне и спектр звука -->
         <div class="flex flex-col items-center text-center w-full max-w-lg mt-4 sm:mt-6 px-2 z-10">
           <h2 id="sp-main-title" class="text-xl sm:text-2xl lg:text-3xl font-extrabold text-white tracking-tight truncate w-full drop-shadow">Выберите трек</h2>
           <p id="sp-main-artist" class="text-xs sm:text-sm lg:text-base text-white/60 font-medium truncate w-full mt-1">Исполнитель</p>
@@ -319,9 +369,7 @@
         </div>
       </div>
       
-      <!-- Right: Очередь воспроизведения -->
       <div id="sp-right-panel" class="hidden lg:!flex w-full lg:w-[460px] xl:w-[500px] flex-col h-full bg-white/[0.03] rounded-[2rem] p-4 sm:p-6 backdrop-blur-md overflow-hidden">
-        
         <div class="mb-3 sm:mb-4 px-2 flex justify-between items-center shrink-0">
            <div class="text-[12px] sm:text-[13px] text-gray-400 leading-tight">
              Очередь воспроизведения:<br><span class="text-white font-bold text-[14px] sm:text-[16px] mt-0.5 inline-block" id="sp-source">Моя волна</span>
@@ -332,18 +380,13 @@
            </button>
         </div>
 
-        <!-- Queue List с расширенной зоной автоскролла -->
-        <div id="sp-queue" class="flex-1 overflow-y-auto flex flex-col gap-1.5 pr-1 py-2 relative">
-           <!-- Queue items injected by JS -->
-        </div>
+        <div id="sp-queue" class="flex-1 overflow-y-auto flex flex-col gap-1.5 pr-1 py-2 relative"></div>
       </div>
     </div>
   </div>
 
-  <!-- ПАРЯЩИЙ НИЖНИЙ ПЛЕЕР -->
+  <!-- НИЖНИЙ ПЛЕЕР -->
   <footer id="player-footer" class="fixed bottom-[66px] md:bottom-4 left-1/2 transform -translate-x-1/2 w-[95%] max-w-[1800px] h-[72px] md:h-[96px] rounded-[2rem] bg-[#0A0A0A]/95 backdrop-blur-3xl z-50 flex items-center justify-between px-3.5 sm:px-8 shadow-[0_10px_40px_rgba(0,0,0,0.9)] transition-[bottom] duration-300">
-    
-    <!-- Прогресс-бар с увеличенной областью захвата и мгновенным откликом -->
     <div class="absolute -top-[12px] left-6 right-6 sm:left-8 sm:right-8 h-[24px] group flex items-center z-20">
       <div class="w-full h-[3px] group-hover:h-[5px] bg-white/15 rounded-full transition-[height] duration-150 relative">
         <div id="progress-fill" class="absolute top-0 left-0 h-full neon-bg rounded-full" style="width: 0%;"></div>
@@ -356,7 +399,6 @@
              class="range-overlay absolute inset-0">
     </div>
 
-    <!-- FAR LEFT: Prev, Play, Next, Time -->
     <div class="flex items-center justify-start gap-2.5 sm:gap-5 md:w-1/4 shrink-0">
       <button type="button" onclick="prevTrack()" class="text-white/80 hover:text-white transition transform active:scale-90 p-1">
         <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
@@ -376,7 +418,6 @@
       </span>
     </div>
 
-    <!-- CENTER -->
     <div class="flex items-center justify-start md:justify-center gap-2.5 sm:gap-4 flex-1 min-w-0 max-w-xl mx-2 sm:mx-auto">
       <div onclick="toggleSongPage()" class="flex items-center gap-3 sm:gap-4 cursor-pointer group min-w-0 flex-1 md:flex-initial">
         <div class="w-[44px] h-[44px] sm:w-[54px] sm:h-[54px] rounded-xl overflow-hidden shrink-0 shadow-lg bg-white/5 group-hover:shadow-[0_0_15px_var(--neon)] transition-all duration-300">
@@ -402,7 +443,6 @@
       </div>
     </div>
 
-    <!-- FAR RIGHT: Volume, Repeat, Shuffle, Chevron -->
     <div class="flex items-center justify-end gap-1.5 sm:gap-4 md:w-1/4 text-gray-400 shrink-0">
       <div class="hidden md:flex items-center gap-3 group" onwheel="handleVolumeWheel(event)">
         <button type="button" onclick="toggleMute()" id="btn-mute" class="hover:text-white transition" title="Звук (M)">
@@ -430,26 +470,26 @@
   </footer>
 
   <script>
-    const STORAGE_KEY = 'nikrid_radio_state_v2';
+    const STORAGE_KEY = 'nikrid_radio_state_v3';
+    const PLAYLIST_CACHE_KEY = 'nikrid_playlist_json_cache_v1';
+    const SYNC_CONFIG_KEY = 'nikrid_cloud_sync_cfg_v1';
+    const AUDIO_CACHE_NAME = 'nikrid-audio-cache-v1';
+    const PREFETCH_AHEAD_COUNT = 6; // Предзагрузка 6 аудиофайлов вперёд
+    const WAVE_LIMIT = 200; // До 200 треков в Моей волне
     const DRIVE_API_KEY = 'AIzaSyBtgyeKpROB8ulqpLxFVAuS1AmDHovAo84';
 
-    // Повышение чёткости обложек YouTube / GoogleUserContent / Unsplash до HD
-// Безопасное повышение чёткости обложек
     function upgradeImageResolution(url) {
       if (!url || typeof url !== 'string') {
         return 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1000&q=90';
       }
       let hd = url;
-      // Для YouTube Music / GoogleUserContent аккуратно увеличиваем размер до 544x544 (стандартный размер обложек YTM)
       if (hd.includes('googleusercontent.com') || hd.includes('ggpht.com')) {
         hd = hd.replace(/=w\d+-h\d+[^&?]*/g, '=w544-h544-l90-rj');
         hd = hd.replace(/=s\d+[^&?]*/g, '=s544');
       }
-      // Для обычного YouTube убираем только сжатие ?sqp=..., оставляя гарантированно существующий hqdefault.jpg
       if (hd.includes('ytimg.com')) {
         hd = hd.split('?')[0];
       }
-      // Unsplash
       if (hd.includes('images.unsplash.com')) {
         hd = hd.replace(/w=\d+/g, 'w=1000').replace(/q=\d+/g, 'q=90');
       }
@@ -457,17 +497,12 @@
     }
 
     let TRACKS = [
-      { id: 1, title: 'Midnight City Lights', artist: 'M83 & Waves', duration: '3:20', seconds: 200, moods: ['Весёлая', 'На фоне'], image: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1000&q=90', audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
-      { id: 2, title: 'Осенний дождь на стекле', artist: 'Сироткин', duration: '3:48', seconds: 228, moods: ['Грустная', 'На фоне'], image: 'https://images.unsplash.com/photo-1515694346937-94d85e41e6f0?auto=format&fit=crop&w=1000&q=90', audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3' },
-      { id: 3, title: 'Iron Riffs & Thunder', artist: 'Bring Me The Horizon', duration: '3:36', seconds: 216, moods: ['Тяжёлая'], image: 'https://images.unsplash.com/photo-1498038432885-c6f3f1b912ee?auto=format&fit=crop&w=1000&q=90', audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3' },
-      { id: 4, title: 'Golden Hour Drive', artist: 'Parcels', duration: '3:08', seconds: 188, moods: ['Весёлая', 'На фоне'], image: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=1000&q=90', audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3' },
-      { id: 5, title: 'Symphony of Glass', artist: 'Max Richter', duration: '4:30', seconds: 270, moods: ['Официальная', 'Грустная'], image: 'https://images.unsplash.com/photo-1507838153414-b4b713384a76?auto=format&fit=crop&w=1000&q=90', audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3' },
-      { id: 6, title: 'Neon Pulse', artist: 'Kavinsky', duration: '4:10', seconds: 250, moods: ['Весёлая', 'Тяжёлая'], image: 'https://images.unsplash.com/photo-1550684848-fac1c5b4e853?auto=format&fit=crop&w=1000&q=90', audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3' }
+      { id: 1, title: 'Midnight City Lights', artist: 'M83 & Waves', duration: '3:20', seconds: 200, moods: ['Весёлая'], source: 'playlist', liked: true, image: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1000&q=90', origImage: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1000&q=90', audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' }
     ];
 
     let state = {
       activeTab: 'wave',
-      mood: 'Весёлая',
+      mood: 'Весёлая', // Единственная активная тема на данный момент
       theme: '#10B981',
       currentTrack: TRACKS[0],
       isPlaying: false,
@@ -476,37 +511,450 @@
       volume: 70,
       prevVolume: 70,
       isMuted: false,
-      fallbackTimerId: null,
-      usingFallbackTimer: false,
-      retriedAltUrl: false,
+      playRequestId: 0,
+      stallTimerId: null,
+      reconnectAttempts: 0,
+      currentObjectUrl: null,
+      cachedTrackIds: new Set(),
+      prefetchControllers: new Map(),
       bufferLikes: [],
       bufferDislikes: [],
-      history: [...TRACKS.slice(0, 6)],
+      waveListenedIds: [], // Учёт прослушанных треков из 200 песен Моей волны
+      history: [],
       repeat: false,
       shuffle: false,
       isSongPageOpen: false,
       mobileSongView: 'cover',
       queue: [...TRACKS],
-      customQueueOrder: TRACKS.map(t => t.id)
+      customQueueOrder: TRACKS.map(t => t.id),
+      cloudSyncDebounce: null
     };
 
     const audio = document.getElementById('audio-engine');
 
-    // Если у ролика YouTube нет maxresdefault.jpg, аккуратно откатываемся на hqdefault.jpg, а при полном сбое — на SVG
-function handleImgError(imgEl) {
-      // 1. Если есть сохранённый оригинал и мы его ещё не пробовали — откатываемся на него
+    // =========================================================
+    // СИСТЕМА УВЕДОМЛЕНИЙ И ОШИБОК (Десктоп + Мобильный)
+    // =========================================================
+    function showToast(message, type = 'info', actionLabel = null, actionFn = null, duration = 4500) {
+      const container = document.getElementById('toast-container');
+      if (!container) return;
+
+      // Не спамим одинаковыми сообщениями
+      const existing = Array.from(container.children).find(el => el.dataset.msg === message);
+      if (existing) existing.remove();
+
+      const palette = {
+        error: { dot: 'bg-red-500', glow: 'shadow-[0_10px_35px_rgba(239,68,68,0.28)]', text: 'text-red-200' },
+        warn:  { dot: 'bg-amber-400', glow: 'shadow-[0_10px_35px_rgba(251,191,36,0.22)]', text: 'text-amber-100' },
+        ok:    { dot: 'bg-emerald-400', glow: 'shadow-[0_10px_35px_rgba(16,185,129,0.22)]', text: 'text-emerald-100' },
+        info:  { dot: 'neon-bg', glow: 'shadow-[0_10px_35px_rgba(0,0,0,0.85)]', text: 'text-white/90' }
+      }[type] || { dot: 'neon-bg', glow: '', text: 'text-white' };
+
+      const el = document.createElement('div');
+      el.dataset.msg = message;
+      el.className = `toast-item pointer-events-auto flex items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-[#0C0C0C]/95 backdrop-blur-2xl ${palette.glow}`;
+      el.innerHTML = `
+        <div class="flex items-center gap-2.5 min-w-0">
+          <span class="w-2.5 h-2.5 rounded-full shrink-0 ${palette.dot}"></span>
+          <span class="text-xs sm:text-[13px] font-medium ${palette.text} leading-snug">${message}</span>
+        </div>
+        <div class="flex items-center gap-1.5 shrink-0">
+          ${actionLabel ? `<button type="button" class="toast-action px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-[11px] font-bold text-white transition">${actionLabel}</button>` : ''}
+          <button type="button" class="toast-close p-1 text-white/40 hover:text-white">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+      `;
+
+      el.querySelector('.toast-close').onclick = () => el.remove();
+      if (actionLabel && typeof actionFn === 'function') {
+        el.querySelector('.toast-action').onclick = () => {
+          actionFn();
+          el.remove();
+        };
+      }
+
+      container.appendChild(el);
+      if (duration > 0) {
+        setTimeout(() => { if (el.parentNode) el.remove(); }, duration);
+      }
+    }
+
+    function updateNetworkBadge() {
+      const dot = document.getElementById('net-status-dot');
+      const text = document.getElementById('net-status-text');
+      if (!dot || !text) return;
+
+      const count = state.cachedTrackIds.size;
+      if (!navigator.onLine) {
+        dot.className = 'w-2 h-2 rounded-full bg-amber-400';
+        text.textContent = `Оффлайн • Кэш: ${count}`;
+      } else {
+        dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+        text.textContent = `Кэш: ${Math.min(count, PREFETCH_AHEAD_COUNT + 1)}/${PREFETCH_AHEAD_COUNT}`;
+      }
+    }
+
+    // =========================================================
+    // СВАЙП ВНИЗ ДЛЯ ПЕРЕЗАГРУЗКИ (МОБИЛЬНЫЙ PULL-TO-REFRESH)
+    // =========================================================
+    function initPullToRefresh() {
+      const mainEl = document.getElementById('main-content');
+      const ptrEl = document.getElementById('ptr-indicator');
+      const ptrText = document.getElementById('ptr-text');
+      const ptrSpinner = document.getElementById('ptr-spinner');
+      if (!mainEl || !ptrEl) return;
+
+      let startY = 0;
+      let pulling = false;
+      let readyToReload = false;
+      const THRESHOLD = 78;
+
+      document.addEventListener('touchstart', (e) => {
+        if (state.isSongPageOpen || e.touches.length !== 1) return;
+        const touchY = e.touches[0].clientY;
+        // Срабатывает при свайпе от верхней части экрана или когда список в самом верху
+        if (mainEl.scrollTop <= 2 && touchY < 260) {
+          startY = touchY;
+          pulling = true;
+          readyToReload = false;
+        }
+      }, { passive: true });
+
+      document.addEventListener('touchmove', (e) => {
+        if (!pulling) return;
+        const dy = e.touches[0].clientY - startY;
+        if (dy <= 10 || mainEl.scrollTop > 2) {
+          ptrEl.style.opacity = '0';
+          ptrEl.style.transform = 'translate(-50%, -48px)';
+          return;
+        }
+
+        const clamped = Math.min(dy * 0.55, 95);
+        ptrEl.style.opacity = Math.min(1, clamped / 45).toFixed(2);
+        ptrEl.style.transform = `translate(-50%, ${Math.round(clamped - 20)}px)`;
+        ptrSpinner.style.transform = `rotate(${Math.round(clamped * 3.5)}deg)`;
+
+        if (dy >= THRESHOLD) {
+          readyToReload = true;
+          ptrText.textContent = 'Отпустите для перезагрузки';
+        } else {
+          readyToReload = false;
+          ptrText.textContent = 'Потяните для обновления';
+        }
+      }, { passive: true });
+
+      document.addEventListener('touchend', () => {
+        if (!pulling) return;
+        pulling = false;
+
+        if (readyToReload) {
+          ptrText.textContent = 'Перезагрузка...';
+          ptrSpinner.classList.add('animate-spin');
+          setTimeout(() => location.reload(), 220);
+        } else {
+          ptrEl.style.opacity = '0';
+          ptrEl.style.transform = 'translate(-50%, -48px)';
+        }
+      });
+    }
+
+    // =========================================================
+    // ПРЕДЗАГРУЗКА ПО 6 АУДИОФАЙЛОВ ВПЕРЁД (CACHE API + OFFLINE)
+    // =========================================================
+    function getCacheKeyForTrack(track) {
+      return `https://nikrid.local.cache/audio/${track.driveId || track.id}`;
+    }
+
+    async function refreshCachedIdsIndex() {
+      if (!('caches' in window)) return;
+      try {
+        const cache = await caches.open(AUDIO_CACHE_NAME);
+        const keys = await cache.keys();
+        const urlSet = new Set(keys.map(req => req.url));
+        state.cachedTrackIds = new Set();
+        TRACKS.forEach(t => {
+          if (urlSet.has(getCacheKeyForTrack(t))) {
+            state.cachedTrackIds.add(t.id);
+          }
+        });
+        updateNetworkBadge();
+      } catch (e) {}
+    }
+
+    async function getCachedBlobUrl(track) {
+      if (!('caches' in window) || !track) return null;
+      try {
+        const cache = await caches.open(AUDIO_CACHE_NAME);
+        const match = await cache.match(getCacheKeyForTrack(track));
+        if (!match) return null;
+        const blob = await match.blob();
+        if (blob.size < 4096) return null;
+        return URL.createObjectURL(blob);
+      } catch (e) {
+        return null;
+      }
+    }
+
+    async function fetchAndCacheTrack(track) {
+      if (!('caches' in window) || !track || !track.audioUrl || !navigator.onLine) return false;
+      const cacheKey = getCacheKeyForTrack(track);
+
+      try {
+        const cache = await caches.open(AUDIO_CACHE_NAME);
+        const existing = await cache.match(cacheKey);
+        if (existing) {
+          state.cachedTrackIds.add(track.id);
+          updateNetworkBadge();
+          return true;
+        }
+
+        if (state.prefetchControllers.has(track.id)) return false;
+
+        const controller = new AbortController();
+        state.prefetchControllers.set(track.id, controller);
+        const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+        const response = await fetch(track.audioUrl, {
+          signal: controller.signal,
+          mode: 'cors',
+          cache: 'no-store'
+        });
+
+        clearTimeout(timeoutId);
+        state.prefetchControllers.delete(track.id);
+
+        if (!response.ok) {
+          if (response.status === 403) {
+            showToast('Google Drive временно ограничил доступ (403). Проверьте VPN или квоту.', 'warn', null, null, 5000);
+          }
+          return false;
+        }
+
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('text/html')) {
+          return false;
+        }
+
+        await cache.put(cacheKey, response.clone());
+        state.cachedTrackIds.add(track.id);
+        updateNetworkBadge();
+        return true;
+      } catch (e) {
+        state.prefetchControllers.delete(track.id);
+        return false;
+      }
+    }
+
+    async function prefetchNextTracks() {
+      if (!('caches' in window) || !state.currentTrack || !state.queue.length) return;
+
+      const curIdx = state.queue.findIndex(t => t.id === state.currentTrack.id);
+      if (curIdx === -1) return;
+
+      // Собираем текущий + 6 следующих треков
+      const targetTracks = [];
+      const keepKeys = new Set();
+      for (let offset = 0; offset <= PREFETCH_AHEAD_COUNT; offset++) {
+        const t = state.queue[(curIdx + offset) % state.queue.length];
+        if (t && !keepKeys.has(getCacheKeyForTrack(t))) {
+          targetTracks.push(t);
+          keepKeys.add(getCacheKeyForTrack(t));
+        }
+      }
+
+      // Очищаем старые треки из кэша, чтобы не забивать память телефона
+      try {
+        const cache = await caches.open(AUDIO_CACHE_NAME);
+        const keys = await cache.keys();
+        for (const req of keys) {
+          if (!keepKeys.has(req.url)) {
+            await cache.delete(req);
+          }
+        }
+      } catch (e) {}
+
+      await refreshCachedIdsIndex();
+
+      if (!navigator.onLine) return;
+
+      // Последовательно подгружаем недостающие треки (не перегружая сеть при VPN)
+      for (const track of targetTracks) {
+        if (!navigator.onLine) break;
+        if (!state.cachedTrackIds.has(track.id)) {
+          await fetchAndCacheTrack(track);
+        }
+      }
+    }
+
+    // =========================================================
+    // ОБЛАЧНАЯ СИНХРОНИЗАЦИЯ БУФЕРА (GITHUB GIST)
+    // =========================================================
+    function getSyncConfig() {
+      try {
+        return JSON.parse(localStorage.getItem(SYNC_CONFIG_KEY) || '{}');
+      } catch (e) { return {}; }
+    }
+
+    function openSyncModal() {
+      const cfg = getSyncConfig();
+      document.getElementById('sync-token-input').value = cfg.token || '';
+      document.getElementById('sync-gist-input').value = cfg.gistId || '';
+      document.getElementById('sync-status-info').textContent = cfg.gistId
+        ? `Подключено к Gist: ${cfg.gistId}`
+        : 'Синхронизация ещё не настроена.';
+      document.getElementById('sync-modal').classList.remove('hidden');
+    }
+
+    function closeSyncModal() {
+      document.getElementById('sync-modal').classList.add('hidden');
+    }
+
+    function buildSyncPayload() {
+      return {
+        updatedAt: new Date().toISOString(),
+        likeIds: state.bufferLikes.map(t => t.id),
+        dislikeIds: state.bufferDislikes.map(t => t.id),
+        waveListenedIds: state.waveListenedIds,
+        likeTitles: state.bufferLikes.map(t => ({ id: t.id, driveId: t.driveId, title: t.title, artist: t.artist })),
+        dislikeTitles: state.bufferDislikes.map(t => ({ id: t.id, driveId: t.driveId, title: t.title, artist: t.artist }))
+      };
+    }
+
+    async function pushCloudState(silent = true) {
+      const cfg = getSyncConfig();
+      if (!cfg.token || !navigator.onLine) return;
+
+      const content = JSON.stringify(buildSyncPayload(), null, 2);
+      try {
+        if (!cfg.gistId) {
+          const res = await fetch('https://api.github.com/gists', {
+            method: 'POST',
+            headers: {
+              'Authorization': `token ${cfg.token}`,
+              'Accept': 'application/vnd.github+json',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              description: 'Nikrid Radio Cross-Device Sync State',
+              public: false,
+              files: { 'nikrid_sync.json': { content } }
+            })
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          cfg.gistId = data.id;
+          localStorage.setItem(SYNC_CONFIG_KEY, JSON.stringify(cfg));
+          const gistInput = document.getElementById('sync-gist-input');
+          if (gistInput) gistInput.value = cfg.gistId;
+          if (!silent) showToast('Приватный Gist создан и синхронизирован!', 'ok');
+        } else {
+          const res = await fetch(`https://api.github.com/gists/${cfg.gistId}`, {
+            method: 'PATCH',
+            headers: {
+              'Authorization': `token ${cfg.token}`,
+              'Accept': 'application/vnd.github+json',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              files: { 'nikrid_sync.json': { content } }
+            })
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          if (!silent) showToast('Облачный буфер обновлён', 'ok');
+        }
+        const syncIcon = document.getElementById('sync-icon');
+        if (syncIcon) syncIcon.classList.add('text-emerald-400');
+      } catch (e) {
+        if (!silent) showToast(`Ошибка облачной синхронизации: ${e.message}`, 'error');
+      }
+    }
+
+    async function pullCloudState(showSuccessToast = false) {
+      const cfg = getSyncConfig();
+      if (!cfg.token || !cfg.gistId || !navigator.onLine) return;
+
+      try {
+        const res = await fetch(`https://api.github.com/gists/${cfg.gistId}`, {
+          headers: {
+            'Authorization': `token ${cfg.token}`,
+            'Accept': 'application/vnd.github+json'
+          },
+          cache: 'no-store'
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const file = data.files && data.files['nikrid_sync.json'];
+        if (!file || !file.content) return;
+
+        const remote = JSON.parse(file.content);
+
+        // Объединяем буферы с облаком
+        if (Array.isArray(remote.likeIds)) {
+          const mergedLikes = new Set([...state.bufferLikes.map(t => t.id), ...remote.likeIds]);
+          state.bufferLikes = Array.from(mergedLikes).map(id => TRACKS.find(t => t.id === id)).filter(Boolean);
+        }
+        if (Array.isArray(remote.dislikeIds)) {
+          const mergedDislikes = new Set([...state.bufferDislikes.map(t => t.id), ...remote.dislikeIds]);
+          state.bufferDislikes = Array.from(mergedDislikes).map(id => TRACKS.find(t => t.id === id)).filter(Boolean);
+          // Дизлайк перекрывает лайк
+          const disSet = new Set(state.bufferDislikes.map(t => t.id));
+          state.bufferLikes = state.bufferLikes.filter(t => !disSet.has(t.id));
+        }
+        if (Array.isArray(remote.waveListenedIds)) {
+          state.waveListenedIds = Array.from(new Set([...state.waveListenedIds, ...remote.waveListenedIds]));
+        }
+
+        saveState(false);
+        renderContent();
+        updatePlayerUI();
+
+        const syncIcon = document.getElementById('sync-icon');
+        if (syncIcon) syncIcon.classList.add('text-emerald-400');
+        if (showSuccessToast) showToast('Данные синхронизированы с облаком', 'ok');
+      } catch (e) {
+        if (showSuccessToast) showToast(`Не удалось загрузить буфер: ${e.message}`, 'error');
+      }
+    }
+
+    async function saveAndTestCloudSync() {
+      const token = document.getElementById('sync-token-input').value.trim();
+      const gistId = document.getElementById('sync-gist-input').value.trim();
+      if (!token) {
+        showToast('Вставьте GitHub Token (с правом gist)', 'warn');
+        return;
+      }
+      localStorage.setItem(SYNC_CONFIG_KEY, JSON.stringify({ token, gistId }));
+      document.getElementById('sync-status-info').textContent = 'Синхронизация...';
+      if (gistId) {
+        await pullCloudState(false);
+      }
+      await pushCloudState(false);
+      const updated = getSyncConfig();
+      document.getElementById('sync-status-info').textContent = updated.gistId
+        ? `Успешно! Gist ID: ${updated.gistId}`
+        : 'Ошибка создания Gist';
+    }
+
+    function scheduleCloudPush() {
+      clearTimeout(state.cloudSyncDebounce);
+      state.cloudSyncDebounce = setTimeout(() => pushCloudState(true), 2000);
+    }
+
+    // =========================================================
+    // БАЗОВЫЕ ФУНКЦИИ ПЛЕЕРА
+    // =========================================================
+    function handleImgError(imgEl) {
       const orig = imgEl.getAttribute('data-orig');
       if (orig && imgEl.src !== orig && !imgEl.dataset.triedOrig) {
         imgEl.dataset.triedOrig = '1';
         imgEl.src = orig;
         return;
       }
-      // 2. Если был maxresdefault — пробуем hqdefault
       if (imgEl.src && imgEl.src.includes('maxresdefault.jpg')) {
         imgEl.src = imgEl.src.replace('maxresdefault.jpg', 'hqdefault.jpg');
         return;
       }
-      // 3. Крайний случай — стильная виниловая заглушка
       imgEl.onerror = null;
       imgEl.src = "data:image/svg+xml;utf8," + encodeURIComponent(`
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
@@ -523,10 +971,10 @@ function handleImgError(imgEl) {
       `);
     }
 
-    function saveState() {
+    function saveState(triggerCloud = true) {
       try {
         const payload = {
-          mood: state.mood,
+          mood: 'Весёлая',
           theme: state.theme,
           currentTrackId: state.currentTrack ? state.currentTrack.id : 1,
           volume: state.volume,
@@ -536,11 +984,13 @@ function handleImgError(imgEl) {
           shuffle: state.shuffle,
           likeIds: state.bufferLikes.map(t => t.id),
           dislikeIds: state.bufferDislikes.map(t => t.id),
+          waveListenedIds: state.waveListenedIds,
           historyIds: state.history.map(t => t.id),
           customQueueOrder: state.customQueueOrder,
           queueIds: state.queue.map(t => t.id)
         };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+        if (triggerCloud) scheduleCloudPush();
       } catch (e) {}
     }
 
@@ -554,10 +1004,9 @@ function handleImgError(imgEl) {
           state.theme = data.theme;
           document.documentElement.style.setProperty('--neon', data.theme);
         }
-        if (data.mood) {
-          state.mood = data.mood;
-          document.getElementById('currentMoodLabel').textContent = data.mood;
-        }
+        state.mood = 'Весёлая';
+        document.getElementById('currentMoodLabel').textContent = 'Весёлая';
+
         if (typeof data.volume === 'number') state.volume = data.volume;
         if (typeof data.prevVolume === 'number') state.prevVolume = data.prevVolume;
         if (typeof data.isMuted === 'boolean') state.isMuted = data.isMuted;
@@ -569,6 +1018,9 @@ function handleImgError(imgEl) {
         }
         if (Array.isArray(data.dislikeIds)) {
           state.bufferDislikes = data.dislikeIds.map(id => TRACKS.find(t => t.id === id)).filter(Boolean);
+        }
+        if (Array.isArray(data.waveListenedIds)) {
+          state.waveListenedIds = data.waveListenedIds;
         }
         if (Array.isArray(data.historyIds) && data.historyIds.length > 0) {
           state.history = data.historyIds.map(id => TRACKS.find(t => t.id === id)).filter(Boolean);
@@ -587,54 +1039,224 @@ function handleImgError(imgEl) {
       } catch (e) {}
     }
 
+    function parsePlaylistArray(json) {
+      return json.map((item, idx) => {
+        let rawUrl = item.audioUrl || item.url || item.file || '';
+        const idMatch = rawUrl.match(/[-\w]{25,}/);
+        const driveId = idMatch ? idMatch[0] : null;
+        if (driveId && (rawUrl.includes('drive.google.com') || rawUrl.includes('googleusercontent.com'))) {
+          rawUrl = `https://www.googleapis.com/drive/v3/files/${driveId}?alt=media&key=${DRIVE_API_KEY}`;
+        }
+
+        const rawImg = item.image || item.cover || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1000&q=90';
+        const source = item.source === 'wave' ? 'wave' : 'playlist';
+        const isLikedDefault = source === 'playlist' ? true : Boolean(item.liked);
+
+        return {
+          id: item.id || idx + 1,
+          driveId: driveId,
+          title: item.title || 'Без названия',
+          artist: item.artist || 'Неизвестный исполнитель',
+          duration: item.duration || '3:30',
+          seconds: item.seconds || 210,
+          moods: ['Весёлая'],
+          source: source,
+          liked: isLikedDefault,
+          image: upgradeImageResolution(rawImg),
+          origImage: rawImg,
+          audioUrl: rawUrl
+        };
+      });
+    }
+
+    function applyTracksData(parsedTracks) {
+      TRACKS = parsedTracks;
+      state.queue = [...TRACKS];
+      state.customQueueOrder = TRACKS.map(t => t.id);
+      state.currentTrack = TRACKS[0];
+      state.history = TRACKS.slice(0, 6);
+      loadState();
+
+      // Треки из плейлиста YouTube уже идут с лайком — отмечаем, если не дизлайкнуты
+      const dislikedSet = new Set(state.bufferDislikes.map(t => t.id));
+      TRACKS.forEach(t => {
+        if (t.source === 'playlist' && !dislikedSet.has(t.id)) {
+          t.liked = true;
+        }
+      });
+
+      renderContent();
+      updatePlayerUI();
+      refreshCachedIdsIndex().then(() => prefetchNextTracks());
+    }
+
     async function tryLoadLocalPlaylistJson() {
+      // 1. Мгновенная загрузка из локального кэша (чтобы сайт работал даже полностью оффлайн)
       try {
-        const res = await fetch('playlist.json', { cache: 'no-store' });
-        if (!res.ok) return;
-        const json = await res.json();
-        if (Array.isArray(json) && json.length > 0) {
-          TRACKS = json.map((item, idx) => {
-            let rawUrl = item.audioUrl || item.url || item.file || '';
-            const idMatch = rawUrl.match(/[-\w]{25,}/);
-            const driveId = idMatch ? idMatch[0] : null;
-            if (driveId && (rawUrl.includes('drive.google.com') || rawUrl.includes('googleusercontent.com'))) {
-              rawUrl = `https://www.googleapis.com/drive/v3/files/${driveId}?alt=media&key=${DRIVE_API_KEY}`;
-            }
-
-            const rawImg = item.image || item.cover || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1000&q=90';
-
-            return {
-              id: item.id || idx + 1,
-              driveId: driveId,
-              title: item.title || 'Без названия',
-              artist: item.artist || 'Неизвестный исполнитель',
-              duration: item.duration || '3:30',
-              seconds: item.seconds || 210,
-              moods: Array.isArray(item.moods) ? item.moods : ['Весёлая'],
-              image: upgradeImageResolution(rawImg),
-              audioUrl: rawUrl
-            };
-          });
-          state.queue = [...TRACKS];
-          state.customQueueOrder = TRACKS.map(t => t.id);
-          state.currentTrack = TRACKS[0];
-          state.history = TRACKS.slice(0, 6);
-          loadState();
-          renderContent();
-          updatePlayerUI();
+        const cachedRaw = localStorage.getItem(PLAYLIST_CACHE_KEY);
+        if (cachedRaw) {
+          const cachedJson = JSON.parse(cachedRaw);
+          if (Array.isArray(cachedJson) && cachedJson.length > 0) {
+            applyTracksData(parsePlaylistArray(cachedJson));
+          }
         }
       } catch (e) {}
+
+      // 2. Фоновая подгрузка свежего playlist.json с таймаутом (защита от зависшего VPN)
+      if (!navigator.onLine) {
+        showToast('Нет интернета — открыт сохранённый плейлист и кэш', 'warn');
+        return;
+      }
+
+      try {
+        const controller = new AbortController();
+        const tid = setTimeout(() => controller.abort(), 12000);
+        const res = await fetch('playlist.json', { cache: 'no-store', signal: controller.signal });
+        clearTimeout(tid);
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        if (Array.isArray(json) && json.length > 0) {
+          try { localStorage.setItem(PLAYLIST_CACHE_KEY, JSON.stringify(json)); } catch (e) {}
+          applyTracksData(parsePlaylistArray(json));
+          await pullCloudState(false);
+        }
+      } catch (e) {
+        if (TRACKS.length <= 1) {
+          showToast('Не удалось загрузить playlist.json. Проверьте интернет или VPN.', 'error', 'Повторить', () => tryLoadLocalPlaylistJson(), 0);
+        } else {
+          showToast('Работаем из кэша (сеть/VPN нестабильны)', 'warn');
+        }
+      }
+    }
+
+    // Разграничение: Моя волна (до 200 треков с учётом прослушиваний) vs Плейлист (избранное с YouTube)
+    function getWaveTracks() {
+      const dislikedIds = new Set(state.bufferDislikes.map(t => t.id));
+      const explicitWave = TRACKS.filter(t => t.source === 'wave' && !dislikedIds.has(t.id));
+      const pool = explicitWave.length > 0 ? explicitWave : TRACKS.filter(t => !dislikedIds.has(t.id));
+
+      const listenedSet = new Set(state.waveListenedIds);
+      const unlistened = pool.filter(t => !listenedSet.has(t.id));
+      const listened = pool.filter(t => listenedSet.has(t.id));
+
+      return [...unlistened, ...listened].slice(0, WAVE_LIMIT);
+    }
+
+    function getPlaylistTracks() {
+      const dislikedIds = new Set(state.bufferDislikes.map(t => t.id));
+      const likedIds = new Set(state.bufferLikes.map(t => t.id));
+      return TRACKS.filter(t => (t.source === 'playlist' || likedIds.has(t.id)) && !dislikedIds.has(t.id));
+    }
+
+    function markTrackAsListened(track) {
+      if (!track) return;
+      if (!state.waveListenedIds.includes(track.id)) {
+        state.waveListenedIds.push(track.id);
+        saveState(true);
+      }
+    }
+
+    async function reconnectCurrentStream() {
+      if (!state.isPlaying || !state.currentTrack) return;
+
+      // Сначала проверяем, вдруг трек уже успел скачаться в оффлайн-кэш
+      const cachedUrl = await getCachedBlobUrl(state.currentTrack);
+      const resumeTime = audio.currentTime || 0;
+      const reqId = state.playRequestId;
+
+      if (cachedUrl) {
+        if (state.currentObjectUrl) URL.revokeObjectURL(state.currentObjectUrl);
+        state.currentObjectUrl = cachedUrl;
+        audio.pause();
+        audio.src = cachedUrl;
+        audio.load();
+        audio.addEventListener('loadedmetadata', function onMeta() {
+          audio.removeEventListener('loadedmetadata', onMeta);
+          if (reqId !== state.playRequestId) return;
+          if (resumeTime > 0 && resumeTime < audio.duration) audio.currentTime = resumeTime;
+          if (state.isPlaying) audio.play().catch(() => {});
+        });
+        return;
+      }
+
+      if (!navigator.onLine) {
+        showToast('Нет интернета, а этот трек не в кэше. Ищу кэшированный...', 'warn');
+        const cachedInQueue = state.queue.find(t => state.cachedTrackIds.has(t.id) && t.id !== state.currentTrack.id);
+        if (cachedInQueue) {
+          playTrack(cachedInQueue.id);
+        } else {
+          state.isPlaying = false;
+          updatePlayerUI();
+        }
+        return;
+      }
+
+      if (state.reconnectAttempts >= 4) {
+        state.isPlaying = false;
+        updatePlayerUI();
+        showToast('Поток оборвался (смена VPN или лимит Google Drive).', 'error', 'Повторить', () => {
+          state.reconnectAttempts = 0;
+          state.isPlaying = true;
+          reconnectCurrentStream();
+        }, 0);
+        return;
+      }
+
+      state.reconnectAttempts++;
+      showToast(`Переподключение к потоку (${state.reconnectAttempts}/4)...`, 'warn', null, null, 2500);
+
+      const baseUrl = state.currentTrack.audioUrl;
+      if (!baseUrl) return;
+      const separator = baseUrl.includes('?') ? '&' : '?';
+
+      audio.pause();
+      audio.src = `${baseUrl}${separator}_retry=${Date.now()}`;
+      audio.load();
+
+      audio.addEventListener('loadedmetadata', function onMeta() {
+        audio.removeEventListener('loadedmetadata', onMeta);
+        if (reqId !== state.playRequestId) return;
+        if (resumeTime > 0 && resumeTime < audio.duration) {
+          audio.currentTime = resumeTime;
+        }
+        if (state.isPlaying) {
+          audio.play().catch(() => {});
+        }
+      });
+    }
+
+    function scheduleStallWatchdog() {
+      clearTimeout(state.stallTimerId);
+      if (!state.isPlaying) return;
+      state.stallTimerId = setTimeout(() => {
+        if (state.isPlaying && (audio.paused || audio.readyState < 3)) {
+          reconnectCurrentStream();
+        }
+      }, 4500);
     }
 
     function initAudioEngine() {
       audio.addEventListener('timeupdate', () => {
-        if (state.isDraggingProgress || state.usingFallbackTimer || !audio.duration || isNaN(audio.duration)) return;
+        if (state.isDraggingProgress || !audio.duration || isNaN(audio.duration)) return;
         state.progress = (audio.currentTime / audio.duration) * 100;
+        // Если прослушано > 45% трека из Моей волны — засчитываем прослушивание
+        if (state.progress > 45 && state.currentTrack && state.currentTrack.source === 'wave') {
+          markTrackAsListened(state.currentTrack);
+        }
         syncProgressUI();
       });
 
+      audio.addEventListener('playing', () => {
+        clearTimeout(state.stallTimerId);
+        state.reconnectAttempts = 0;
+      });
+
+      audio.addEventListener('waiting', () => scheduleStallWatchdog());
+      audio.addEventListener('stalled', () => scheduleStallWatchdog());
+
       audio.addEventListener('loadedmetadata', () => {
-        if (audio.duration && !isNaN(audio.duration)) {
+        if (audio.duration && !isNaN(audio.duration) && state.currentTrack) {
           state.currentTrack.seconds = Math.floor(audio.duration);
           const m = Math.floor(state.currentTrack.seconds / 60);
           const s = String(state.currentTrack.seconds % 60).padStart(2, '0');
@@ -644,6 +1266,8 @@ function handleImgError(imgEl) {
       });
 
       audio.addEventListener('ended', () => {
+        clearTimeout(state.stallTimerId);
+        if (state.currentTrack) markTrackAsListened(state.currentTrack);
         if (state.repeat) {
           playTrack(state.currentTrack.id, false);
         } else {
@@ -652,47 +1276,47 @@ function handleImgError(imgEl) {
       });
 
       audio.addEventListener('error', () => {
-        if (state.isPlaying && state.currentTrack && state.currentTrack.driveId && !state.retriedAltUrl) {
-          state.retriedAltUrl = true;
-          audio.src = `https://www.googleapis.com/drive/v3/files/${state.currentTrack.driveId}?alt=media&key=${DRIVE_API_KEY}`;
-          audio.play().catch(() => {
-            state.usingFallbackTimer = true;
-            startFallbackTimer();
-          });
-          return;
-        }
         if (state.isPlaying) {
-          state.usingFallbackTimer = true;
-          startFallbackTimer();
+          scheduleStallWatchdog();
         }
+      });
+
+      window.addEventListener('offline', () => {
+        updateNetworkBadge();
+        showToast('Интернет пропал — воспроизведение продолжится из кэша', 'warn');
+      });
+
+      window.addEventListener('online', () => {
+        updateNetworkBadge();
+        showToast('Сеть восстановлена — подгружаю следующие треки', 'ok', null, null, 3000);
+        if (state.isPlaying && (audio.paused || audio.readyState < 3)) {
+          state.reconnectAttempts = 0;
+          reconnectCurrentStream();
+        }
+        prefetchNextTracks();
+        pushCloudState(true);
       });
     }
 
     function init() {
       loadState();
       initAudioEngine();
+      initPullToRefresh();
       tryLoadLocalPlaylistJson();
+      updateNetworkBadge();
 
       window.addEventListener('pointerup', () => {
-        if (state.isDraggingProgress) {
-          state.isDraggingProgress = false;
-        }
+        if (state.isDraggingProgress) state.isDraggingProgress = false;
       });
 
       document.addEventListener('click', (e) => {
-        if (!e.target.closest('#moodMenuWrapper')) {
-          document.getElementById('moodMenu').classList.add('hidden');
-        }
-        if (!e.target.closest('#colorMenuWrapper')) {
-          document.getElementById('colorMenu').classList.add('hidden');
-        }
-        if (!e.target.closest('#searchContainer')) {
-          document.getElementById('searchDropdown').classList.add('hidden');
-        }
+        if (!e.target.closest('#moodMenuWrapper')) document.getElementById('moodMenu').classList.add('hidden');
+        if (!e.target.closest('#colorMenuWrapper')) document.getElementById('colorMenu').classList.add('hidden');
+        if (!e.target.closest('#searchContainer')) document.getElementById('searchDropdown').classList.add('hidden');
       });
 
       document.addEventListener('keydown', (e) => {
-        if (document.activeElement === document.getElementById('searchInput')) return;
+        if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
         if (e.code === 'Space') {
           e.preventDefault();
           togglePlay();
@@ -713,10 +1337,9 @@ function handleImgError(imgEl) {
       startSmoothProgressLoop();
     }
 
-    // 60 FPS плавная синхронизация прогресс-бара во время проигрывания
     function startSmoothProgressLoop() {
       function tick() {
-        if (state.isPlaying && !state.isDraggingProgress && !state.usingFallbackTimer && audio.duration && !isNaN(audio.duration)) {
+        if (state.isPlaying && !state.isDraggingProgress && audio.duration && !isNaN(audio.duration)) {
           state.progress = (audio.currentTime / audio.duration) * 100;
           syncProgressUI();
         }
@@ -735,22 +1358,16 @@ function handleImgError(imgEl) {
       state.theme = colorHex;
       document.documentElement.style.setProperty('--neon', colorHex);
       document.getElementById('colorMenu').classList.add('hidden');
-      saveState();
+      saveState(false);
       updatePlayerUI();
       renderContent();
     }
 
-    function getFilteredTracksByMood(moodName) {
-      if (!moodName || moodName === 'Все настроения') return [...TRACKS];
-      const exact = TRACKS.filter(t => Array.isArray(t.moods) && t.moods.includes(moodName));
-      return exact.length > 0 ? exact : [...TRACKS];
-    }
-
     function selectMood(moodName) {
-      state.mood = moodName;
-      document.getElementById('currentMoodLabel').textContent = moodName;
+      state.mood = 'Весёлая';
+      document.getElementById('currentMoodLabel').textContent = 'Весёлая';
       document.getElementById('moodMenu').classList.add('hidden');
-      saveState();
+      saveState(false);
       renderContent();
       updatePlayerUI();
     }
@@ -806,8 +1423,9 @@ function handleImgError(imgEl) {
       }
 
       if (state.activeTab === 'wave') {
-        const moodTracks = getFilteredTracksByMood(state.mood);
-        const recommendations = moodTracks.slice(0, 9);
+        const waveTracks = getWaveTracks();
+        const listenedCount = waveTracks.filter(t => state.waveListenedIds.includes(t.id)).length;
+        const recommendations = waveTracks.slice(0, 12);
         const recentlyPlayed = state.history.slice(0, 6);
         
         container.innerHTML = `
@@ -816,11 +1434,11 @@ function handleImgError(imgEl) {
               <div class="absolute right-0 top-0 w-2/3 h-full bg-gradient-to-l from-[var(--neon)]/15 to-transparent pointer-events-none transition-colors duration-500"></div>
               
               <div class="relative z-10 flex flex-col items-start">
-                <div class="flex items-center gap-2.5 mb-2.5 sm:mb-4">
-                  <div class="px-3.5 py-1 rounded-full text-[10px] sm:text-[11px] font-extrabold bg-[var(--neon)] text-black uppercase tracking-wider shadow-[0_0_15px_rgba(0,0,0,0.5)] transition-colors duration-500">
-                    ${state.mood}
+                <div class="flex flex-wrap items-center gap-2 mb-2.5 sm:mb-4">
+                  <div class="px-3.5 py-1 rounded-full text-[10px] sm:text-[11px] font-extrabold bg-[var(--neon)] text-black uppercase tracking-wider shadow-[0_0_15px_rgba(0,0,0,0.5)]">
+                    Весёлая
                   </div>
-                  <span class="text-xs text-white/40 font-medium">${moodTracks.length} треков в потоке</span>
+                  <span class="text-xs text-white/45 font-medium">${waveTracks.length} треков • Прослушано: ${listenedCount}</span>
                 </div>
                 <h1 class="text-2xl sm:text-4xl font-extrabold text-white tracking-tight drop-shadow-md mb-4 sm:mb-6">Моя волна</h1>
                 <button type="button" onclick="startWaveStream()" class="px-5 sm:px-8 py-2.5 sm:py-3.5 bg-white text-black text-xs sm:text-sm font-extrabold rounded-full hover:scale-105 active:scale-95 transition-transform shadow-[0_0_20px_rgba(255,255,255,0.2)] flex items-center gap-2">
@@ -832,18 +1450,18 @@ function handleImgError(imgEl) {
               </div>
 
               <div class="relative z-10 flex items-center gap-1.5 sm:gap-2.5 mr-1 sm:mr-6 opacity-90 shrink-0">
-                <div class="w-1.5 sm:w-2.5 h-5 rounded-full neon-bg transition-all duration-500"></div>
-                <div class="w-1.5 sm:w-2.5 h-8 sm:h-9 rounded-full neon-bg transition-all duration-500"></div>
-                <div class="w-1.5 sm:w-2.5 h-10 sm:h-12 rounded-full neon-bg transition-all duration-500"></div>
-                <div class="w-1.5 sm:w-2.5 h-6 sm:h-7 rounded-full neon-bg transition-all duration-500"></div>
-                <div class="w-1.5 sm:w-2.5 h-4 rounded-full neon-bg transition-all duration-500"></div>
+                <div class="w-1.5 sm:w-2.5 h-5 rounded-full neon-bg"></div>
+                <div class="w-1.5 sm:w-2.5 h-8 sm:h-9 rounded-full neon-bg"></div>
+                <div class="w-1.5 sm:w-2.5 h-10 sm:h-12 rounded-full neon-bg"></div>
+                <div class="w-1.5 sm:w-2.5 h-6 sm:h-7 rounded-full neon-bg"></div>
+                <div class="w-1.5 sm:w-2.5 h-4 rounded-full neon-bg"></div>
               </div>
             </div>
 
             <div class="mb-8 sm:mb-12">
               <div class="flex items-baseline justify-between mb-3.5 sm:mb-6 px-1">
-                <h2 class="text-lg sm:text-2xl font-bold tracking-tight drop-shadow-md">Рекомендации</h2>
-                <span class="text-xs text-white/40">Поток: ${state.mood}</span>
+                <h2 class="text-lg sm:text-2xl font-bold tracking-tight drop-shadow-md">Волна дня (до 200 треков)</h2>
+                <span class="text-xs text-white/40">Новые в начале</span>
               </div>
               <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-4">
                 ${recommendations.map(t => renderGridCard(t)).join('')}
@@ -863,11 +1481,15 @@ function handleImgError(imgEl) {
         `;
       } 
       else if (state.activeTab === 'playlist') {
+        const playlistTracks = getPlaylistTracks();
         container.innerHTML = `
           <div class="w-full max-w-[1600px] mx-auto">
-            <h1 class="text-2xl sm:text-4xl font-bold mb-4 sm:mb-8 tracking-tight drop-shadow-md px-1">Плейлист</h1>
+            <div class="flex items-baseline justify-between mb-4 sm:mb-8 px-1">
+              <h1 class="text-2xl sm:text-4xl font-bold tracking-tight drop-shadow-md">Плейлист</h1>
+              <span class="text-xs sm:text-sm text-white/45">${playlistTracks.length} треков из YouTube Music</span>
+            </div>
             <div class="flex flex-col gap-2">
-              ${TRACKS.map(t => renderListRow(t)).join('')}
+              ${playlistTracks.map(t => renderListRow(t)).join('')}
             </div>
           </div>
         `;
@@ -876,7 +1498,7 @@ function handleImgError(imgEl) {
         container.innerHTML = `
           <div class="w-full max-w-[1600px] mx-auto">
             <h1 class="text-2xl sm:text-4xl font-bold mb-2 sm:mb-4 tracking-tight drop-shadow-md neon-color px-1">Буфер: Лайк</h1>
-            <p class="text-xs sm:text-sm text-white/50 mb-5 sm:mb-6 px-1">Эти треки сохранены в браузере и ожидают скачивания Python-скриптом на Google Drive.</p>
+            <p class="text-xs sm:text-sm text-white/50 mb-5 sm:mb-6 px-1">Общий буфер устройств. Скрипт core.py добавит эти треки в основной плейлист.</p>
             <div class="flex flex-col gap-2">
               ${state.bufferLikes.length === 0 ? '<p class="text-white/30 italic px-1">Буфер пуст</p>' : state.bufferLikes.map(t => renderListRow(t)).join('')}
             </div>
@@ -887,7 +1509,7 @@ function handleImgError(imgEl) {
         container.innerHTML = `
           <div class="w-full max-w-[1600px] mx-auto">
             <h1 class="text-2xl sm:text-4xl font-bold mb-2 sm:mb-4 tracking-tight drop-shadow-md text-red-500 px-1">Буфер: Дизлайк</h1>
-            <p class="text-xs sm:text-sm text-white/50 mb-5 sm:mb-6 px-1">Эти треки будут автоматически удалены из хранилища при следующей синхронизации.</p>
+            <p class="text-xs sm:text-sm text-white/50 mb-5 sm:mb-6 px-1">Общий буфер устройств. Скрипт core.py удалит эти треки с Google Диска и исключит из волны.</p>
             <div class="flex flex-col gap-2">
               ${state.bufferDislikes.length === 0 ? '<p class="text-white/30 italic px-1">Буфер пуст</p>' : state.bufferDislikes.map(t => renderListRow(t)).join('')}
             </div>
@@ -897,34 +1519,47 @@ function handleImgError(imgEl) {
     }
 
     function startWaveStream() {
-      const moodTracks = getFilteredTracksByMood(state.mood);
-      const isCurrentInMood = moodTracks.some(t => t.id === (state.currentTrack && state.currentTrack.id));
-      if (!isCurrentInMood && moodTracks.length > 0) {
-        state.queue = [...moodTracks, ...TRACKS.filter(t => !moodTracks.some(m => m.id === t.id))];
-        state.customQueueOrder = state.queue.map(t => t.id);
-        playTrack(moodTracks[0].id);
-        return;
+      const waveTracks = getWaveTracks();
+      if (waveTracks.length > 0) {
+        const isCurInWave = waveTracks.some(t => t.id === (state.currentTrack && state.currentTrack.id));
+        if (!isCurInWave) {
+          state.queue = [...waveTracks];
+          state.customQueueOrder = state.queue.map(t => t.id);
+          playTrack(waveTracks[0].id);
+          return;
+        }
       }
       if (state.isPlaying) {
         togglePlay();
-      } else {
-        playTrack(state.currentTrack ? state.currentTrack.id : moodTracks[0].id);
+      } else if (state.currentTrack) {
+        playTrack(state.currentTrack.id);
       }
     }
 
+    function isTrackLiked(track) {
+      if (!track) return false;
+      const isDisliked = state.bufferDislikes.some(t => t.id === track.id);
+      if (isDisliked) return false;
+      return track.source === 'playlist' || track.liked || state.bufferLikes.some(t => t.id === track.id);
+    }
+
     function renderGridCard(track) {
-      const isCur = track.id === state.currentTrack.id;
+      const isCur = track.id === (state.currentTrack && state.currentTrack.id);
+      const isCached = state.cachedTrackIds.has(track.id);
       return `
         <div onclick="playTrack(${track.id})" class="p-3 sm:p-3.5 rounded-3xl flex items-center gap-3.5 sm:gap-4 cursor-pointer transition-colors duration-200 hover:bg-white/10 group ${isCur ? 'bg-white/[0.12] shadow-lg' : 'bg-white/[0.04]'}">
           <div class="relative rounded-2xl shrink-0 overflow-hidden shadow-md bg-white/5" style="width: 56px; height: 56px;">
-            <img src="${track.image}" alt="${track.title}" loading="lazy" decoding="async" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" onerror="handleImgError(this)">
+            <img src="${track.image}" data-orig="${track.origImage || track.image}" alt="${track.title}" loading="lazy" decoding="async" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" onerror="handleImgError(this)">
             <div class="absolute inset-0 bg-black/45 flex items-center justify-center ${isCur ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity text-sm font-bold text-white">
               ${isCur && state.isPlaying ? '❚❚' : '▶'}
             </div>
           </div>
           <div class="flex flex-col min-w-0 flex-1">
             <div class="text-sm truncate transition-colors ${isCur ? 'active-track-title' : 'font-semibold text-white'}">${track.title}</div>
-            <div class="text-[12px] sm:text-[13px] mt-0.5 truncate text-white/50">${track.artist}</div>
+            <div class="text-[12px] sm:text-[13px] mt-0.5 truncate text-white/50 flex items-center gap-1.5">
+              ${isCached ? '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" title="В кэше"></span>' : ''}
+              <span class="truncate">${track.artist}</span>
+            </div>
           </div>
           <span class="text-xs text-white/30 tabular-nums pr-1">${track.duration}</span>
         </div>
@@ -932,21 +1567,25 @@ function handleImgError(imgEl) {
     }
 
     function renderListRow(track) {
-      const isCur = track.id === state.currentTrack.id;
-      const isLiked = state.bufferLikes.some(t => t.id === track.id);
+      const isCur = track.id === (state.currentTrack && state.currentTrack.id);
+      const isLiked = isTrackLiked(track);
       const isDisliked = state.bufferDislikes.some(t => t.id === track.id);
+      const isCached = state.cachedTrackIds.has(track.id);
 
       return `
         <div onclick="playTrack(${track.id})" class="px-3.5 sm:px-5 py-2.5 sm:py-3 rounded-3xl flex items-center justify-between gap-2.5 sm:gap-5 cursor-pointer transition-colors duration-200 hover:bg-white/10 group ${isCur ? 'bg-white/[0.12] shadow-lg' : 'bg-white/[0.04]'}">
           <div class="flex items-center gap-3.5 sm:gap-5 min-w-0 flex-1">
             <div class="relative w-11 h-11 sm:w-12 sm:h-12 rounded-xl shrink-0 overflow-hidden shadow-md bg-white/5">
-              <img src="${track.image}" alt="${track.title}" loading="lazy" decoding="async" class="w-full h-full object-cover" onerror="handleImgError(this)">
+              <img src="${track.image}" data-orig="${track.origImage || track.image}" alt="${track.title}" loading="lazy" decoding="async" class="w-full h-full object-cover" onerror="handleImgError(this)">
               <div class="absolute inset-0 bg-black/45 flex items-center justify-center ${isCur ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity text-sm font-bold text-white">
                 ${isCur && state.isPlaying ? '❚❚' : '▶'}
               </div>
             </div>
             <div class="flex flex-col sm:flex-row sm:items-center min-w-0 flex-1 gap-0.5 sm:gap-4">
-              <div class="text-[13px] sm:text-[15px] truncate sm:w-1/2 transition-colors ${isCur ? 'active-track-title' : 'font-semibold text-white'}">${track.title}</div>
+              <div class="text-[13px] sm:text-[15px] truncate sm:w-1/2 transition-colors flex items-center gap-1.5 ${isCur ? 'active-track-title' : 'font-semibold text-white'}">
+                ${isCached ? '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" title="Загружено в кэш"></span>' : ''}
+                <span class="truncate">${track.title}</span>
+              </div>
               <div class="text-[11px] sm:text-[14px] truncate text-white/50 sm:w-1/2">${track.artist}</div>
             </div>
           </div>
@@ -982,7 +1621,7 @@ function handleImgError(imgEl) {
         resultsContainer.innerHTML = results.map(t => `
           <button type="button" onclick="playTrack(${t.id}); clearSearch();" class="w-full flex items-center gap-3.5 px-5 py-2.5 hover:bg-white/10 active:bg-white/15 transition-colors text-left group">
             <div class="w-10 h-10 rounded-xl overflow-hidden shrink-0 bg-white/5">
-              <img src="${t.image}" alt="${t.title}" class="w-full h-full object-cover" onerror="handleImgError(this)">
+              <img src="${t.image}" data-orig="${t.origImage || t.image}" alt="${t.title}" class="w-full h-full object-cover" onerror="handleImgError(this)">
             </div>
             <div class="min-w-0 flex-1">
               <div class="font-medium text-sm truncate text-white/90 group-hover:text-white">${t.title}</div>
@@ -1007,75 +1646,103 @@ function handleImgError(imgEl) {
       state.history = [track, ...state.history.filter(t => t.id !== track.id)].slice(0, 8);
     }
 
-    function playTrack(id, recordHistory = true) {
+    async function playTrack(id, recordHistory = true) {
       const found = state.queue.find(t => t.id === id) || TRACKS.find(t => t.id === id);
       if (!found) return;
+
+      const reqId = ++state.playRequestId;
+      clearTimeout(state.stallTimerId);
 
       state.currentTrack = found;
       state.progress = 0;
       state.isPlaying = true;
-      state.usingFallbackTimer = false;
-      state.retriedAltUrl = false;
-      clearInterval(state.fallbackTimerId);
+      state.reconnectAttempts = 0;
 
-      if (recordHistory) {
-        recordTrackInHistory(found);
+      if (recordHistory) recordTrackInHistory(found);
+
+      audio.pause();
+      if (state.currentObjectUrl) {
+        URL.revokeObjectURL(state.currentObjectUrl);
+        state.currentObjectUrl = null;
       }
+      audio.removeAttribute('src');
+      audio.load();
 
-      if (found.audioUrl) {
-        if (audio.src !== found.audioUrl) {
-          audio.src = found.audioUrl;
-        }
-        audio.currentTime = 0;
-        audio.volume = state.isMuted ? 0 : state.volume / 100;
-        const playPromise = audio.play();
-        if (playPromise !== undefined) {
-          playPromise.catch(() => {
-            if (found.driveId && !state.retriedAltUrl) {
-              state.retriedAltUrl = true;
-              audio.src = `https://www.googleapis.com/drive/v3/files/${found.driveId}?alt=media&key=${DRIVE_API_KEY}`;
-              audio.play().catch(() => {
-                state.usingFallbackTimer = true;
-                startFallbackTimer();
-              });
-            } else {
-              state.usingFallbackTimer = true;
-              startFallbackTimer();
-            }
-          });
-        }
-      } else {
-        state.usingFallbackTimer = true;
-        startFallbackTimer();
-      }
-
-      saveState();
+      saveState(false);
       updatePlayerUI();
       renderContent();
+
+      // 1. Сначала пробуем мгновенно достать трек из локального Cache API (работает без интернета!)
+      const cachedUrl = await getCachedBlobUrl(found);
+      if (reqId !== state.playRequestId) {
+        if (cachedUrl) URL.revokeObjectURL(cachedUrl);
+        return;
+      }
+
+      if (cachedUrl) {
+        state.currentObjectUrl = cachedUrl;
+        audio.src = cachedUrl;
+        audio.currentTime = 0;
+        audio.volume = state.isMuted ? 0 : state.volume / 100;
+        const p = audio.play();
+        if (p !== undefined) {
+          p.catch((err) => {
+            if (reqId !== state.playRequestId || (err && err.name === 'AbortError')) return;
+            showToast('Не удалось воспроизвести кэшированный файл', 'error');
+          });
+        }
+        prefetchNextTracks();
+        return;
+      }
+
+      // 2. Если трека нет в кэше и нет интернета
+      if (!navigator.onLine) {
+        showToast('Нет интернета и трек не загружен в кэш', 'error');
+        state.isPlaying = false;
+        updatePlayerUI();
+        return;
+      }
+
+      // 3. Играем напрямую по сети и запускаем предзагрузку текущего + 6 вперёд
+      if (found.audioUrl) {
+        audio.src = found.audioUrl;
+        audio.currentTime = 0;
+        audio.volume = state.isMuted ? 0 : state.volume / 100;
+        scheduleStallWatchdog();
+
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch((err) => {
+            if (reqId !== state.playRequestId) return;
+            if (err && err.name === 'AbortError') return;
+            scheduleStallWatchdog();
+          });
+        }
+        prefetchNextTracks();
+      }
     }
 
     function togglePlay() {
-      if(!state.currentTrack) return;
+      if (!state.currentTrack) return;
       state.isPlaying = !state.isPlaying;
 
       if (state.isPlaying) {
-        if (!audio.src && state.currentTrack.audioUrl) {
-          audio.src = state.currentTrack.audioUrl;
+        if (!audio.src) {
+          playTrack(state.currentTrack.id, false);
+          return;
         }
-        if (state.usingFallbackTimer || !state.currentTrack.audioUrl) {
-          startFallbackTimer();
-        } else {
-          const p = audio.play();
-          if (p !== undefined) {
-            p.catch(() => {
-              state.usingFallbackTimer = true;
-              startFallbackTimer();
-            });
-          }
+        state.reconnectAttempts = 0;
+        scheduleStallWatchdog();
+        const p = audio.play();
+        if (p !== undefined) {
+          p.catch((err) => {
+            if (err && err.name === 'AbortError') return;
+            reconnectCurrentStream();
+          });
         }
       } else {
+        clearTimeout(state.stallTimerId);
         audio.pause();
-        clearInterval(state.fallbackTimerId);
       }
 
       updatePlayerUI();
@@ -1083,63 +1750,67 @@ function handleImgError(imgEl) {
     }
 
     function nextTrack() {
-      const idx = state.queue.findIndex(t => t.id === state.currentTrack.id);
+      if (!state.queue.length) return;
+      const idx = state.queue.findIndex(t => t.id === (state.currentTrack && state.currentTrack.id));
       const nextIdx = (idx + 1) % state.queue.length;
       playTrack(state.queue[nextIdx].id);
     }
 
     function prevTrack() {
+      if (!state.queue.length) return;
       const curSec = (state.progress / 100) * (state.currentTrack ? state.currentTrack.seconds : 0);
       if (curSec > 3) {
         seekTrack(0, true);
         return;
       }
-      const idx = state.queue.findIndex(t => t.id === state.currentTrack.id);
+      const idx = state.queue.findIndex(t => t.id === (state.currentTrack && state.currentTrack.id));
       const prevIdx = (idx - 1 + state.queue.length) % state.queue.length;
       playTrack(state.queue[prevIdx].id);
     }
 
     function actionLike() {
-      if(!state.currentTrack) return;
+      if (!state.currentTrack) return;
       actionLikeBtn(state.currentTrack.id);
     }
 
     function actionDislike() {
-      if(!state.currentTrack) return;
+      if (!state.currentTrack) return;
       actionDislikeBtn(state.currentTrack.id);
     }
 
     function actionLikeBtn(id) {
       const track = TRACKS.find(t => t.id === id);
-      if(!track) return;
+      if (!track) return;
       const exists = state.bufferLikes.some(t => t.id === id);
       if (exists) {
         state.bufferLikes = state.bufferLikes.filter(t => t.id !== id);
+        if (track.source !== 'playlist') track.liked = false;
       } else {
         state.bufferLikes.push(track);
+        track.liked = true;
         state.bufferDislikes = state.bufferDislikes.filter(t => t.id !== id);
       }
-      saveState();
+      saveState(true);
       updatePlayerUI();
       renderContent();
     }
 
     function actionDislikeBtn(id) {
       const track = TRACKS.find(t => t.id === id);
-      if(!track) return;
+      if (!track) return;
       const exists = state.bufferDislikes.some(t => t.id === id);
       if (exists) {
         state.bufferDislikes = state.bufferDislikes.filter(t => t.id !== id);
       } else {
         state.bufferDislikes.push(track);
+        track.liked = false;
         state.bufferLikes = state.bufferLikes.filter(t => t.id !== id);
       }
-      saveState();
+      saveState(true);
       updatePlayerUI();
       renderContent();
     }
 
-    // Быстрая и отзывчивая перемотка без отставания полоски от ползунка
     function startSeekDrag() {
       state.isDraggingProgress = true;
     }
@@ -1148,12 +1819,10 @@ function handleImgError(imgEl) {
       state.progress = Math.max(0, Math.min(100, Number(val)));
       syncProgressUI();
 
-      if (!state.usingFallbackTimer && audio.duration && !isNaN(audio.duration)) {
+      if (audio.duration && !isNaN(audio.duration)) {
         audio.currentTime = (state.progress / 100) * audio.duration;
       }
-      if (commitAudio) {
-        state.isDraggingProgress = false;
-      }
+      if (commitAudio) state.isDraggingProgress = false;
     }
 
     function syncProgressUI() {
@@ -1174,7 +1843,7 @@ function handleImgError(imgEl) {
         state.isMuted = true;
       }
       audio.volume = state.isMuted ? 0 : state.volume / 100;
-      saveState();
+      saveState(false);
       updateVolumeUI();
     }
 
@@ -1194,7 +1863,7 @@ function handleImgError(imgEl) {
         state.isMuted = true;
       }
       audio.volume = state.isMuted ? 0 : state.volume / 100;
-      saveState();
+      saveState(false);
       updateVolumeUI();
     }
 
@@ -1218,29 +1887,9 @@ function handleImgError(imgEl) {
       }
     }
 
-    function startFallbackTimer() {
-      clearInterval(state.fallbackTimerId);
-      state.fallbackTimerId = setInterval(() => {
-        if (!state.isPlaying || !state.currentTrack || state.isDraggingProgress) return;
-        const step = 100 / (state.currentTrack.seconds * 10);
-        state.progress += step;
-        if(state.progress >= 100) {
-          if (state.repeat) {
-            playTrack(state.currentTrack.id, false);
-          } else {
-            nextTrack();
-          }
-        } else {
-          syncProgressUI();
-        }
-      }, 100);
-    }
-
     function updateTime() {
-      if(!state.currentTrack) return;
-      const totalSec = (!state.usingFallbackTimer && audio.duration && !isNaN(audio.duration))
-        ? audio.duration
-        : state.currentTrack.seconds;
+      if (!state.currentTrack) return;
+      const totalSec = (audio.duration && !isNaN(audio.duration)) ? audio.duration : state.currentTrack.seconds;
       const curSec = Math.floor((state.progress / 100) * totalSec);
       const m = Math.floor(curSec / 60);
       const s = String(curSec % 60).padStart(2, '0');
@@ -1249,32 +1898,46 @@ function handleImgError(imgEl) {
 
     function updatePlayerUI() {
       const t = state.currentTrack;
-      if(!t) return;
+      if (!t) return;
       const hdImage = upgradeImageResolution(t.image);
+      const origImage = t.origImage || t.image;
+
       document.getElementById('player-title').textContent = t.title;
       document.getElementById('player-artist').textContent = t.artist;
-      document.getElementById('player-cover-img').src = hdImage;
+      
+      const pImg = document.getElementById('player-cover-img');
+      delete pImg.dataset.triedOrig;
+      pImg.setAttribute('data-orig', origImage);
+      pImg.src = hdImage;
+
       document.getElementById('time-total').textContent = t.duration;
       
-      document.getElementById('sp-cover-img').src = hdImage;
+      const spImg = document.getElementById('sp-cover-img');
+      delete spImg.dataset.triedOrig;
+      spImg.setAttribute('data-orig', origImage);
+      spImg.src = hdImage;
+
+      const cacheBadge = document.getElementById('sp-cache-badge');
+      if (cacheBadge) cacheBadge.classList.toggle('hidden', !state.cachedTrackIds.has(t.id));
+
       document.getElementById('sp-main-title').textContent = t.title;
       document.getElementById('sp-main-artist').textContent = t.artist;
-      document.getElementById('sp-cover-mood').textContent = (t.moods && t.moods[0]) ? t.moods[0] : state.mood;
-      document.getElementById('sp-source').textContent = state.activeTab === 'wave' ? `Моя волна (${state.mood})` : 'Плейлист';
+      document.getElementById('sp-cover-mood').textContent = 'Весёлая';
+      document.getElementById('sp-source').textContent = state.activeTab === 'wave' ? 'Моя волна (Весёлая)' : 'Плейлист';
 
       const likeBtn = document.getElementById('player-like-btn');
       const dislikeBtn = document.getElementById('player-dislike-btn');
       const mobLikeBtn = document.getElementById('sp-mob-like');
       const mobDislikeBtn = document.getElementById('sp-mob-dislike');
       
-      const isLiked = state.bufferLikes.some(track => track.id === t.id);
-      const isDisliked = state.bufferDislikes.some(track => track.id === t.id);
+      const liked = isTrackLiked(t);
+      const disliked = state.bufferDislikes.some(track => track.id === t.id);
 
-      const likeSvg = isLiked 
+      const likeSvg = liked 
         ? '<svg class="w-5 h-5 neon-color" fill="currentColor" viewBox="0 0 24 24"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg>'
         : '<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg>';
         
-      const dislikeSvg = isDisliked 
+      const dislikeSvg = disliked 
         ? '<svg class="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 24 24"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"></path></svg>'
         : '<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"></path></svg>';
 
@@ -1318,7 +1981,7 @@ function handleImgError(imgEl) {
     function toggleRepeat() {
       state.repeat = !state.repeat;
       syncToggleButtonsUI();
-      saveState();
+      saveState(false);
     }
 
     function toggleShuffle() {
@@ -1340,8 +2003,9 @@ function handleImgError(imgEl) {
       }
 
       syncToggleButtonsUI();
-      saveState();
+      saveState(false);
       renderQueue();
+      prefetchNextTracks();
     }
 
     function toggleSongPage(force) {
@@ -1373,14 +2037,12 @@ function handleImgError(imgEl) {
       const temp = state.queue[index];
       state.queue[index] = state.queue[targetIndex];
       state.queue[targetIndex] = temp;
-      if (!state.shuffle) {
-        state.customQueueOrder = state.queue.map(t => t.id);
-      }
-      saveState();
+      if (!state.shuffle) state.customQueueOrder = state.queue.map(t => t.id);
+      saveState(false);
       renderQueue();
+      prefetchNextTracks();
     }
 
-    // Визуализатор + живая светомузыка тени позади обложки (обложка стоит на месте)
     function startVisualizerLoop() {
       const canvas = document.getElementById('audio-visualizer');
       const glowEl = document.getElementById('sp-cover-glow');
@@ -1391,6 +2053,10 @@ function handleImgError(imgEl) {
       let smoothEnergy = 0;
 
       function draw() {
+        if (document.hidden) {
+          requestAnimationFrame(draw);
+          return;
+        }
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         const neonColor = getComputedStyle(document.documentElement).getPropertyValue('--neon').trim() || '#10B981';
         const barWidth = 5;
@@ -1424,9 +2090,8 @@ function handleImgError(imgEl) {
           ctx.fill();
         }
 
-        // Анимация тени-светомузыки позади обложки (сама обложка неподвижна)
         if (glowEl) {
-          const avgEnergy = (energySum / bars - 4) / 22; // 0..1
+          const avgEnergy = (energySum / bars - 4) / 22;
           smoothEnergy += (avgEnergy - smoothEnergy) * 0.18;
 
           if (state.isPlaying && !state.isMuted && state.volume > 0) {
@@ -1453,7 +2118,6 @@ function handleImgError(imgEl) {
       requestAnimationFrame(draw);
     }
 
-    // УЛУЧШЕННОЕ ПЕРЕТАСКИВАНИЕ ОЧЕРЕДИ С АВТОСКРОЛЛОМ И ЖИВОЙ СОРТИРОВКОЙ
     let draggedTrackId = null;
     let autoScrollVelocity = 0;
     let autoScrollFrame = null;
@@ -1464,9 +2128,7 @@ function handleImgError(imgEl) {
         autoScrollFrame = null;
         return;
       }
-      if (autoScrollVelocity !== 0) {
-        container.scrollTop += autoScrollVelocity;
-      }
+      if (autoScrollVelocity !== 0) container.scrollTop += autoScrollVelocity;
       autoScrollFrame = requestAnimationFrame(runQueueAutoScroll);
     }
 
@@ -1476,7 +2138,6 @@ function handleImgError(imgEl) {
       const container = document.getElementById('sp-queue');
       if (!container || !draggedTrackId) return;
 
-      // Широкая зона автопрокрутки (90px сверху и снизу контейнера очереди)
       const rect = container.getBoundingClientRect();
       const edgeSize = 90;
       const y = e.clientY;
@@ -1491,7 +2152,6 @@ function handleImgError(imgEl) {
         autoScrollVelocity = 0;
       }
 
-      // Находим карточку под курсором и сразу меняем местами в реальном времени
       const targetItem = e.target.closest('.queue-item');
       if (!targetItem) return;
 
@@ -1505,7 +2165,6 @@ function handleImgError(imgEl) {
       const targetIdx = state.queue.findIndex(t => t.id === targetId);
       if (draggedIdx === -1 || targetIdx === -1) return;
 
-      // Переставляем сразу, когда курсор пересёк середину соседнего элемента
       if ((draggedIdx < targetIdx && y > midpoint - 6) || (draggedIdx > targetIdx && y < midpoint + 6)) {
         const [moved] = state.queue.splice(draggedIdx, 1);
         state.queue.splice(targetIdx, 0, moved);
@@ -1518,12 +2177,8 @@ function handleImgError(imgEl) {
       draggedTrackId = parseInt(this.dataset.id);
       e.dataTransfer.effectAllowed = 'move';
       e.dataTransfer.setData('text/plain', String(draggedTrackId));
-      setTimeout(() => {
-        this.classList.add('dragging-active');
-      }, 0);
-      if (!autoScrollFrame) {
-        autoScrollFrame = requestAnimationFrame(runQueueAutoScroll);
-      }
+      setTimeout(() => this.classList.add('dragging-active'), 0);
+      if (!autoScrollFrame) autoScrollFrame = requestAnimationFrame(runQueueAutoScroll);
     }
 
     function handleDragEnd() {
@@ -1533,33 +2188,37 @@ function handleImgError(imgEl) {
         cancelAnimationFrame(autoScrollFrame);
         autoScrollFrame = null;
       }
-      saveState();
+      saveState(false);
       renderQueue();
+      prefetchNextTracks();
     }
 
     function renderQueue() {
       const container = document.getElementById('sp-queue');
-      if(!container) return;
+      if (!container) return;
 
       const isDesktop = window.matchMedia('(min-width: 1024px)').matches;
-
       container.ondragover = isDesktop ? handleQueueContainerDragOver : null;
       container.ondrop = isDesktop ? (e) => { e.preventDefault(); handleDragEnd(); } : null;
 
       container.innerHTML = state.queue.map((track, idx) => {
-        const isCur = track.id === state.currentTrack.id;
+        const isCur = track.id === (state.currentTrack && state.currentTrack.id);
         const isDraggingThis = track.id === draggedTrackId;
+        const isCached = state.cachedTrackIds.has(track.id);
         return `
           <div ${isDesktop ? 'draggable="true"' : ''} data-id="${track.id}" onclick="playTrack(${track.id})" class="queue-item group flex items-center gap-3 px-3.5 py-2.5 rounded-2xl hover:bg-white/10 cursor-grab active:cursor-grabbing transition-colors duration-150 ${isCur ? 'bg-white/[0.12]' : ''} ${isDraggingThis ? 'dragging-active' : ''}">
              <div class="hidden lg:flex w-5 justify-center text-gray-400 opacity-60 group-hover:opacity-100 hover:text-white transition-opacity">
                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
              </div>
              <div class="relative w-10 h-10 sm:w-11 sm:h-11 rounded-xl shadow flex-shrink-0 overflow-hidden bg-white/5">
-               <img src="${track.image}" alt="${track.title}" loading="lazy" decoding="async" class="w-full h-full object-cover" onerror="handleImgError(this)">
+               <img src="${track.image}" data-orig="${track.origImage || track.image}" alt="${track.title}" loading="lazy" decoding="async" class="w-full h-full object-cover" onerror="handleImgError(this)">
                ${isCur ? (state.isPlaying ? '<div class="absolute inset-0 bg-black/60 flex items-center justify-center"><svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg></div>' : '<div class="absolute inset-0 bg-black/60 flex items-center justify-center"><svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>') : '<div class="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>'}
              </div>
              <div class="flex flex-col flex-1 min-w-0">
-               <div class="text-[13px] sm:text-[14px] truncate ${isCur ? 'active-track-title' : 'text-gray-200 font-medium'}">${track.title}</div>
+               <div class="text-[13px] sm:text-[14px] truncate flex items-center gap-1.5 ${isCur ? 'active-track-title' : 'text-gray-200 font-medium'}">
+                 ${isCached ? '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>' : ''}
+                 <span class="truncate">${track.title}</span>
+               </div>
                <div class="text-[11px] sm:text-[12px] truncate text-gray-500 mt-0.5">${track.artist}</div>
              </div>
              <div class="queue-interactive flex lg:hidden items-center gap-1 text-gray-500" onclick="event.stopPropagation()">
@@ -1572,8 +2231,7 @@ function handleImgError(imgEl) {
       }).join('');
 
       if (isDesktop) {
-        const items = container.querySelectorAll('.queue-item');
-        items.forEach(item => {
+        container.querySelectorAll('.queue-item').forEach(item => {
           item.addEventListener('dragstart', handleDragStart);
           item.addEventListener('dragend', handleDragEnd);
         });
@@ -1581,6 +2239,6 @@ function handleImgError(imgEl) {
     }
 
     window.onload = init;
-  </script>   
+  </script>
 </body>
 </html>
