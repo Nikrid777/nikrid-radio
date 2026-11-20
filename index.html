@@ -1091,7 +1091,7 @@
         if (Array.isArray(data.waveListenedIds)) {
           state.waveListenedIds = data.waveListenedIds;
         }
-        if (Array.isArray(data.historyIds) && data.historyIds.length > 0) {
+        if (Array.isArray(data.historyIds)) {
           state.history = data.historyIds.map(id => TRACKS.find(t => t.id === id)).filter(Boolean);
         }
         if (Array.isArray(data.customQueueOrder) && data.customQueueOrder.length > 0) {
@@ -1142,16 +1142,19 @@
       TRACKS = parsedTracks;
       state.queue = [...TRACKS];
       state.customQueueOrder = TRACKS.map(t => t.id);
-      state.currentTrack = TRACKS[0];
-      state.history = TRACKS.slice(0, 6);
+      const waveInit = getWaveTracks();
+      state.currentTrack = waveInit[0] || TRACKS[0];
+      state.history = [];
       loadState();
       if (rawRemoteSyncCache) applyRemoteSyncData(rawRemoteSyncCache);
 
-      // Треки из плейлиста YouTube уже идут с лайком — отмечаем, если не дизлайкнуты
+      // Треки из плейлиста YouTube по умолчанию отмечены лайком (если не в дизлайках)
       const dislikedSet = new Set(state.bufferDislikes.map(t => t.id));
       TRACKS.forEach(t => {
         if (t.source === 'playlist' && !dislikedSet.has(t.id)) {
           t.liked = true;
+        } else if (t.source === 'wave') {
+          t.liked = state.bufferLikes.some(l => l.id === t.id);
         }
       });
 
@@ -1200,11 +1203,14 @@
       }
     }
 
-    // Разграничение: Моя волна (до 200 треков с учётом прослушиваний) vs Плейлист (избранное с YouTube)
+    // Разграничение: Моя волна (пул до 200 треков; треки остаются в волне даже после лайка, пока не обработаны)
     function getWaveTracks() {
       const dislikedIds = new Set(state.bufferDislikes.map(t => t.id));
       const explicitWave = TRACKS.filter(t => t.source === 'wave' && !dislikedIds.has(t.id));
-      const pool = explicitWave.length > 0 ? explicitWave : TRACKS.filter(t => !dislikedIds.has(t.id));
+      // Если в playlist.json уже есть треки волны — берём строго их, иначе только не-плейлистовые треки
+      const pool = explicitWave.length > 0
+        ? explicitWave
+        : TRACKS.filter(t => t.source !== 'playlist' && !dislikedIds.has(t.id));
 
       const listenedSet = new Set(state.waveListenedIds);
       const unlistened = pool.filter(t => !listenedSet.has(t.id));
@@ -1497,7 +1503,7 @@
         const waveTracks = getWaveTracks();
         const listenedCount = waveTracks.filter(t => state.waveListenedIds.includes(t.id)).length;
         const recommendations = waveTracks.slice(0, 12);
-        const recentlyPlayed = state.history.slice(0, 6);
+        const recentlyPlayed = state.history.filter(t => t && t.id).slice(0, 6);
         
         container.innerHTML = `
           <div class="w-full max-w-[1600px] mx-auto">
@@ -1611,7 +1617,11 @@
       if (!track) return false;
       const isDisliked = state.bufferDislikes.some(t => t.id === track.id);
       if (isDisliked) return false;
-      return track.source === 'playlist' || track.liked || state.bufferLikes.some(t => t.id === track.id);
+      const inLikeBuffer = state.bufferLikes.some(t => t.id === track.id);
+      if (track.source === 'wave') {
+        return inLikeBuffer;
+      }
+      return track.source === 'playlist' || Boolean(track.liked) || inLikeBuffer;
     }
 
     function renderGridCard(track) {
@@ -1717,12 +1727,41 @@
       state.history = [track, ...state.history.filter(t => t.id !== track.id)].slice(0, 8);
     }
 
+    async function startAudioSource(srcUrl, reqId) {
+      if (!srcUrl || reqId !== state.playRequestId) return;
+      audio.pause();
+      audio.src = srcUrl;
+      audio.volume = state.isMuted ? 0 : state.volume / 100;
+      audio.load();
+
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        try {
+          await playPromise;
+        } catch (err) {
+          if (reqId !== state.playRequestId) return;
+          if (err && err.name === 'AbortError') return;
+          // Если blob URL по какой-то причине не стартанул — пробуем прямой audioUrl
+          if (srcUrl.startsWith('blob:') && state.currentTrack && state.currentTrack.audioUrl && navigator.onLine) {
+            audio.src = state.currentTrack.audioUrl;
+            audio.load();
+            audio.play().catch(() => {});
+          } else {
+            scheduleStallWatchdog();
+          }
+        }
+      }
+    }
+
     async function playTrack(id, recordHistory = true) {
       const found = state.queue.find(t => t.id === id) || TRACKS.find(t => t.id === id);
       if (!found) return;
 
       const reqId = ++state.playRequestId;
       clearTimeout(state.stallTimerId);
+
+      const previousObjectUrl = state.currentObjectUrl;
+      state.currentObjectUrl = null;
 
       state.currentTrack = found;
       state.progress = 0;
@@ -1732,36 +1771,25 @@
       if (recordHistory) recordTrackInHistory(found);
 
       audio.pause();
-      if (state.currentObjectUrl) {
-        URL.revokeObjectURL(state.currentObjectUrl);
-        state.currentObjectUrl = null;
-      }
-      audio.removeAttribute('src');
-      audio.load();
-
-      saveState(false);
+      saveState(true);
       updatePlayerUI();
       renderContent();
 
-      // 1. Сначала пробуем мгновенно достать трек из локального Cache API (работает без интернета!)
+      // 1. Проверяем кэш
       const cachedUrl = await getCachedBlobUrl(found);
       if (reqId !== state.playRequestId) {
         if (cachedUrl) URL.revokeObjectURL(cachedUrl);
+        if (previousObjectUrl) URL.revokeObjectURL(previousObjectUrl);
         return;
+      }
+
+      if (previousObjectUrl) {
+        setTimeout(() => { try { URL.revokeObjectURL(previousObjectUrl); } catch (e) {} }, 400);
       }
 
       if (cachedUrl) {
         state.currentObjectUrl = cachedUrl;
-        audio.src = cachedUrl;
-        audio.currentTime = 0;
-        audio.volume = state.isMuted ? 0 : state.volume / 100;
-        const p = audio.play();
-        if (p !== undefined) {
-          p.catch((err) => {
-            if (reqId !== state.playRequestId || (err && err.name === 'AbortError')) return;
-            showToast('Не удалось воспроизвести кэшированный файл', 'error');
-          });
-        }
+        await startAudioSource(cachedUrl, reqId);
         prefetchNextTracks();
         return;
       }
@@ -1774,21 +1802,10 @@
         return;
       }
 
-      // 3. Играем напрямую по сети и запускаем предзагрузку текущего + 6 вперёд
+      // 3. Играем по сети
       if (found.audioUrl) {
-        audio.src = found.audioUrl;
-        audio.currentTime = 0;
-        audio.volume = state.isMuted ? 0 : state.volume / 100;
         scheduleStallWatchdog();
-
-        const playPromise = audio.play();
-        if (playPromise !== undefined) {
-          playPromise.catch((err) => {
-            if (reqId !== state.playRequestId) return;
-            if (err && err.name === 'AbortError') return;
-            scheduleStallWatchdog();
-          });
-        }
+        await startAudioSource(found.audioUrl, reqId);
         prefetchNextTracks();
       }
     }
