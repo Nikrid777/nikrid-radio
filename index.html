@@ -2412,6 +2412,28 @@
       }
     }
 
+
+    async function saveImageUrlToCoverCache(vid, imgSrc) {
+      if (!('caches' in window) || !imgSrc || imgSrc.startsWith('data:') || imgSrc.startsWith('blob:') || !navigator.onLine) return;
+      const key = `https://nikrid.local.cache/cover/${vid || encodeURIComponent(imgSrc)}`;
+      try {
+        const cache = await caches.open(COVER_CACHE_NAME);
+        if (await cache.match(key)) return;
+        const res = await fetch(imgSrc, { mode: 'cors' });
+        if (res && res.ok) {
+          await cache.put(key, res.clone());
+        }
+      } catch (e) {}
+    }
+
+    document.addEventListener('load', (e) => {
+      const target = e.target;
+      if (target && target.tagName === 'IMG' && target.src && !target.src.startsWith('data:')) {
+        const vid = target.getAttribute('data-vid') || '';
+        saveImageUrlToCoverCache(vid, target.currentSrc || target.src);
+      }
+    }, true);
+
     window.onload = init;
   </script>
 </body>
