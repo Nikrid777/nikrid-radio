@@ -478,20 +478,19 @@
     const WAVE_LIMIT = 200; // До 200 треков в Моей волне
     const DRIVE_API_KEY = 'AIzaSyBtgyeKpROB8ulqpLxFVAuS1AmDHovAo84';
 
-    function upgradeImageResolution(url) {
-      if (!url || typeof url !== 'string') {
+    function upgradeImageResolution(url, videoId = '') {
+      const cleanVid = (videoId || '').trim();
+      if (!url || typeof url !== 'string' || url.includes('images.unsplash.com')) {
+        if (cleanVid) return `https://i.ytimg.com/vi/${cleanVid}/hqdefault.jpg`;
         return 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1000&q=90';
       }
-      let hd = url;
+      let hd = url.trim();
       if (hd.includes('googleusercontent.com') || hd.includes('ggpht.com')) {
         hd = hd.replace(/=w\d+-h\d+[^&?]*/g, '=w544-h544-l90-rj');
         hd = hd.replace(/=s\d+[^&?]*/g, '=s544');
       }
       if (hd.includes('ytimg.com')) {
         hd = hd.split('?')[0];
-      }
-      if (hd.includes('images.unsplash.com')) {
-        hd = hd.replace(/w=\d+/g, 'w=1000').replace(/q=\d+/g, 'q=90');
       }
       return hd;
     }
@@ -1015,6 +1014,7 @@
     // =========================================================
     function handleImgError(imgEl) {
       const orig = imgEl.getAttribute('data-orig');
+      const vid = imgEl.getAttribute('data-vid');
       if (orig && imgEl.src !== orig && !imgEl.dataset.triedOrig) {
         imgEl.dataset.triedOrig = '1';
         imgEl.src = orig;
@@ -1022,6 +1022,16 @@
       }
       if (imgEl.src && imgEl.src.includes('maxresdefault.jpg')) {
         imgEl.src = imgEl.src.replace('maxresdefault.jpg', 'hqdefault.jpg');
+        return;
+      }
+      if (vid && !imgEl.dataset.triedYtFallback) {
+        imgEl.dataset.triedYtFallback = '1';
+        imgEl.src = `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`;
+        return;
+      }
+      if (imgEl.src && imgEl.src.includes('hqdefault.jpg') && !imgEl.dataset.triedMq) {
+        imgEl.dataset.triedMq = '1';
+        imgEl.src = imgEl.src.replace('hqdefault.jpg', 'mqdefault.jpg');
         return;
       }
       imgEl.onerror = null;
@@ -1117,12 +1127,14 @@
           rawUrl = `https://www.googleapis.com/drive/v3/files/${driveId}?alt=media&key=${DRIVE_API_KEY}`;
         }
 
-        const rawImg = item.image || item.cover || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1000&q=90';
+        const vid = (item.videoId || '').trim();
+        const rawImg = item.image || item.cover || (vid ? `https://i.ytimg.com/vi/${vid}/hqdefault.jpg` : 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1000&q=90');
         const source = item.source === 'wave' ? 'wave' : 'playlist';
         const isLikedDefault = source === 'playlist' ? true : Boolean(item.liked);
 
         return {
           id: item.id || idx + 1,
+          videoId: vid,
           driveId: driveId,
           title: item.title || 'Без названия',
           artist: item.artist || 'Неизвестный исполнитель',
@@ -1131,7 +1143,7 @@
           moods: ['Весёлая'],
           source: source,
           liked: isLikedDefault,
-          image: upgradeImageResolution(rawImg),
+          image: upgradeImageResolution(rawImg, vid),
           origImage: rawImg,
           audioUrl: rawUrl
         };
@@ -1140,10 +1152,10 @@
 
     function applyTracksData(parsedTracks) {
       TRACKS = parsedTracks;
-      state.queue = [...TRACKS];
-      state.customQueueOrder = TRACKS.map(t => t.id);
       const waveInit = getWaveTracks();
-      state.currentTrack = waveInit[0] || TRACKS[0];
+      state.queue = waveInit.length > 0 ? [...waveInit] : [...TRACKS];
+      state.customQueueOrder = state.queue.map(t => t.id);
+      state.currentTrack = state.queue[0] || TRACKS[0];
       state.history = [];
       loadState();
       if (rawRemoteSyncCache) applyRemoteSyncData(rawRemoteSyncCache);
@@ -1624,13 +1636,13 @@
       return track.source === 'playlist' || Boolean(track.liked) || inLikeBuffer;
     }
 
-    function renderGridCard(track) {
+    function renderGridCard(track, context = 'wave') {
       const isCur = track.id === (state.currentTrack && state.currentTrack.id);
       const isCached = state.cachedTrackIds.has(track.id);
       return `
-        <div onclick="playTrack(${track.id})" class="p-3 sm:p-3.5 rounded-3xl flex items-center gap-3.5 sm:gap-4 cursor-pointer transition-colors duration-200 hover:bg-white/10 group ${isCur ? 'bg-white/[0.12] shadow-lg' : 'bg-white/[0.04]'}">
+        <div onclick="playTrack(${track.id}, true, '${context}')" class="p-3 sm:p-3.5 rounded-3xl flex items-center gap-3.5 sm:gap-4 cursor-pointer transition-colors duration-200 hover:bg-white/10 group ${isCur ? 'bg-white/[0.12] shadow-lg' : 'bg-white/[0.04]'}">
           <div class="relative rounded-2xl shrink-0 overflow-hidden shadow-md bg-white/5" style="width: 56px; height: 56px;">
-            <img src="${track.image}" data-orig="${track.origImage || track.image}" alt="${track.title}" loading="lazy" decoding="async" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" onerror="handleImgError(this)">
+            <img src="${track.image}" data-orig="${track.origImage || track.image}" data-vid="${track.videoId || ''}" alt="${track.title}" loading="lazy" decoding="async" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" onerror="handleImgError(this)">
             <div class="absolute inset-0 bg-black/45 flex items-center justify-center ${isCur ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity text-sm font-bold text-white">
               ${isCur && state.isPlaying ? '❚❚' : '▶'}
             </div>
@@ -1647,17 +1659,17 @@
       `;
     }
 
-    function renderListRow(track) {
+    function renderListRow(track, context = 'playlist') {
       const isCur = track.id === (state.currentTrack && state.currentTrack.id);
       const isLiked = isTrackLiked(track);
       const isDisliked = state.bufferDislikes.some(t => t.id === track.id);
       const isCached = state.cachedTrackIds.has(track.id);
 
       return `
-        <div onclick="playTrack(${track.id})" class="px-3.5 sm:px-5 py-2.5 sm:py-3 rounded-3xl flex items-center justify-between gap-2.5 sm:gap-5 cursor-pointer transition-colors duration-200 hover:bg-white/10 group ${isCur ? 'bg-white/[0.12] shadow-lg' : 'bg-white/[0.04]'}">
+        <div onclick="playTrack(${track.id}, true, '${context}')" class="px-3.5 sm:px-5 py-2.5 sm:py-3 rounded-3xl flex items-center justify-between gap-2.5 sm:gap-5 cursor-pointer transition-colors duration-200 hover:bg-white/10 group ${isCur ? 'bg-white/[0.12] shadow-lg' : 'bg-white/[0.04]'}">
           <div class="flex items-center gap-3.5 sm:gap-5 min-w-0 flex-1">
             <div class="relative w-11 h-11 sm:w-12 sm:h-12 rounded-xl shrink-0 overflow-hidden shadow-md bg-white/5">
-              <img src="${track.image}" data-orig="${track.origImage || track.image}" alt="${track.title}" loading="lazy" decoding="async" class="w-full h-full object-cover" onerror="handleImgError(this)">
+              <img src="${track.image}" data-orig="${track.origImage || track.image}" data-vid="${track.videoId || ''}" alt="${track.title}" loading="lazy" decoding="async" class="w-full h-full object-cover" onerror="handleImgError(this)">
               <div class="absolute inset-0 bg-black/45 flex items-center justify-center ${isCur ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity text-sm font-bold text-white">
                 ${isCur && state.isPlaying ? '❚❚' : '▶'}
               </div>
@@ -1753,7 +1765,26 @@
       }
     }
 
-    async function playTrack(id, recordHistory = true) {
+    async function playTrack(id, recordHistory = true, queueContext = null) {
+      if (queueContext === 'wave') {
+        const w = getWaveTracks();
+        if (w.length > 0) {
+          state.queue = [...w];
+          state.customQueueOrder = state.queue.map(t => t.id);
+        }
+      } else if (queueContext === 'playlist') {
+        const p = getPlaylistTracks();
+        if (p.length > 0) {
+          state.queue = [...p];
+          state.customQueueOrder = state.queue.map(t => t.id);
+        }
+      } else if (queueContext === 'buffer-like' && state.bufferLikes.length > 0) {
+        state.queue = [...state.bufferLikes];
+        state.customQueueOrder = state.queue.map(t => t.id);
+      } else if (queueContext === 'buffer-dislike' && state.bufferDislikes.length > 0) {
+        state.queue = [...state.bufferDislikes];
+        state.customQueueOrder = state.queue.map(t => t.id);
+      }
       const found = state.queue.find(t => t.id === id) || TRACKS.find(t => t.id === id);
       if (!found) return;
 
@@ -1995,14 +2026,14 @@
       
       const pImg = document.getElementById('player-cover-img');
       delete pImg.dataset.triedOrig;
-      pImg.setAttribute('data-orig', origImage);
+      pImg.setAttribute('data-orig', origImage); pImg.setAttribute('data-vid', t.videoId || ''); delete pImg.dataset.triedYtFallback; delete pImg.dataset.triedMq;
       pImg.src = hdImage;
 
       document.getElementById('time-total').textContent = t.duration;
       
       const spImg = document.getElementById('sp-cover-img');
       delete spImg.dataset.triedOrig;
-      spImg.setAttribute('data-orig', origImage);
+      spImg.setAttribute('data-orig', origImage); spImg.setAttribute('data-vid', t.videoId || ''); delete spImg.dataset.triedYtFallback; delete spImg.dataset.triedMq; pImg.setAttribute('data-vid', t.videoId || ''); delete pImg.dataset.triedYtFallback; delete pImg.dataset.triedMq;
       spImg.src = hdImage;
 
       const cacheBadge = document.getElementById('sp-cache-badge');
@@ -2011,7 +2042,8 @@
       document.getElementById('sp-main-title').textContent = t.title;
       document.getElementById('sp-main-artist').textContent = t.artist;
       document.getElementById('sp-cover-mood').textContent = 'Весёлая';
-      document.getElementById('sp-source').textContent = state.activeTab === 'wave' ? 'Моя волна (Весёлая)' : 'Плейлист';
+      const isWaveQueue = state.queue.length > 0 && state.queue.every(q => q.source === 'wave');
+      document.getElementById('sp-source').textContent = isWaveQueue ? 'Моя волна (Весёлая)' : (state.activeTab === 'wave' ? 'Моя волна (Весёлая)' : 'Плейлист');
 
       const likeBtn = document.getElementById('player-like-btn');
       const dislikeBtn = document.getElementById('player-dislike-btn');
@@ -2299,7 +2331,7 @@
                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
              </div>
              <div class="relative w-10 h-10 sm:w-11 sm:h-11 rounded-xl shadow flex-shrink-0 overflow-hidden bg-white/5">
-               <img src="${track.image}" data-orig="${track.origImage || track.image}" alt="${track.title}" loading="lazy" decoding="async" class="w-full h-full object-cover" onerror="handleImgError(this)">
+               <img src="${track.image}" data-orig="${track.origImage || track.image}" data-vid="${track.videoId || ''}" alt="${track.title}" loading="lazy" decoding="async" class="w-full h-full object-cover" onerror="handleImgError(this)">
                ${isCur ? (state.isPlaying ? '<div class="absolute inset-0 bg-black/60 flex items-center justify-center"><svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg></div>' : '<div class="absolute inset-0 bg-black/60 flex items-center justify-center"><svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>') : '<div class="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>'}
              </div>
              <div class="flex flex-col flex-1 min-w-0">
