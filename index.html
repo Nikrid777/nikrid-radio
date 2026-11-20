@@ -739,7 +739,8 @@
 
         if (!response.ok) {
           if (response.status === 403) {
-            showToast('Google Drive временно ограничил доступ (403). Проверьте VPN или квоту.', 'warn', null, null, 5000);
+            state._driveCorsBlocked = true;
+            showToast('Google Drive отдаёт 403 на прямую загрузку — воспроизведение идёт напрямую через плеер.', 'warn', null, null, 5000);
           }
           return false;
         }
@@ -789,7 +790,7 @@
 
       await refreshCachedIdsIndex();
 
-      if (!navigator.onLine) return;
+      if (!navigator.onLine || state._driveCorsBlocked) return;
 
       // Последовательно подгружаем недостающие треки (не перегружая сеть при VPN)
       for (const track of targetTracks) {
