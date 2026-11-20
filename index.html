@@ -198,13 +198,7 @@
 
     <!-- КНОПКИ СПРАВА: Синхронизация, Тема «Весёлая», Цвет -->
     <div class="order-2 lg:order-3 lg:w-1/4 flex items-center justify-end gap-2 sm:gap-2.5 relative z-50">
-      <!-- Облачная синхронизация буфера -->
-      <button type="button" onclick="openSyncModal()" id="btn-sync-cloud" title="Облачная синхронизация лайков/дизлайков" class="flex items-center gap-1.5 px-3 sm:px-3.5 py-2 sm:py-2.5 rounded-full bg-white/5 hover:bg-white/10 active:bg-white/15 transition-colors text-xs font-medium text-white/70 hover:text-white">
-        <svg id="sync-icon" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/>
-        </svg>
-        <span class="hidden xl:inline" id="sync-btn-label">Синхр.</span>
-      </button>
+
 
       <!-- Тема: сейчас работаем только с «Весёлая» -->
       <div class="relative" id="moodMenuWrapper">
@@ -238,35 +232,7 @@
     </div>
   </header>
 
-  <!-- МОДАЛЬНОЕ ОКНО ОБЛАЧНОЙ СИНХРОНИЗАЦИИ (GitHub Gist) -->
-  <div id="sync-modal" class="hidden fixed inset-0 z-[90] bg-black/80 backdrop-blur-xl flex items-center justify-center p-4">
-    <div class="w-full max-w-md rounded-[2rem] bg-[#0B0B0B] p-6 sm:p-7 shadow-[0_25px_70px_rgba(0,0,0,0.95)] relative">
-      <div class="flex items-center justify-between mb-4">
-        <h3 class="text-lg font-extrabold text-white">Облачная синхронизация</h3>
-        <button type="button" onclick="closeSyncModal()" class="p-2 rounded-full bg-white/5 hover:bg-white/10 text-white/60 hover:text-white">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-        </button>
-      </div>
-      <p class="text-xs text-white/55 mb-4 leading-relaxed">
-        Синхронизирует буфер лайков, дизлайков и прослушанные треки «Моей волны» между телефоном, ПК и скриптом <code class="text-white/80">core.py</code> через приватный GitHub Gist. Токен хранится только локально на этом устройстве.
-      </p>
-      <div class="flex flex-col gap-3">
-        <div>
-          <label class="block text-[11px] font-semibold text-white/50 mb-1.5 uppercase tracking-wider">GitHub Token (scope: gist)</label>
-          <input type="password" id="sync-token-input" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" class="w-full h-11 px-4 rounded-2xl bg-white/5 focus:bg-white/10 text-xs text-white placeholder-white/30">
-        </div>
-        <div>
-          <label class="block text-[11px] font-semibold text-white/50 mb-1.5 uppercase tracking-wider">Gist ID (оставьте пустым для автосоздания)</label>
-          <input type="text" id="sync-gist-input" placeholder="Автоматически создастся приватный Gist" class="w-full h-11 px-4 rounded-2xl bg-white/5 focus:bg-white/10 text-xs text-white placeholder-white/30">
-        </div>
-        <div id="sync-status-info" class="text-[11px] text-white/45 min-h-[16px]"></div>
-        <div class="flex gap-2.5 mt-2">
-          <button type="button" onclick="saveAndTestCloudSync()" class="flex-1 py-3 rounded-full neon-bg text-black text-xs font-extrabold hover:brightness-110 active:scale-95 transition">Сохранить и синхронизировать</button>
-          <button type="button" onclick="pullCloudState(true)" class="px-4 py-3 rounded-full bg-white/10 text-white text-xs font-bold hover:bg-white/15 active:scale-95 transition">Обновить</button>
-        </div>
-      </div>
-    </div>
-  </div>
+
 
   <!-- ЦЕНТРАЛЬНАЯ ЧАСТЬ -->
   <div class="flex flex-1 overflow-hidden z-10 relative">
@@ -659,10 +625,55 @@
     }
 
     // =========================================================
-    // ПРЕДЗАГРУЗКА ПО 6 АУДИОФАЙЛОВ ВПЕРЁД (CACHE API + OFFLINE)
+    // КЭШ ОБЛОЖЕК И ПРЕДЗАГРУЗКА 6 АУДИОФАЙЛОВ В ФОНЕ
     // =========================================================
+    const COVER_CACHE_NAME = 'nikrid-cover-cache-v1';
+    const coverBlobCache = new Map();
+
     function getCacheKeyForTrack(track) {
       return `https://nikrid.local.cache/audio/${track.driveId || track.id}`;
+    }
+
+    function getCoverCacheKey(track) {
+      return `https://nikrid.local.cache/cover/${track.videoId || track.id}`;
+    }
+
+    async function cacheTrackCover(track) {
+      if (!('caches' in window) || !track || !track.image || !navigator.onLine) return;
+      const key = getCoverCacheKey(track);
+      try {
+        const cache = await caches.open(COVER_CACHE_NAME);
+        if (await cache.match(key)) return;
+        const res = await fetch(track.image, { mode: 'cors' });
+        if (res && res.ok) {
+          await cache.put(key, res.clone());
+          const blob = await res.blob();
+          if (blob.size > 512) {
+            coverBlobCache.set(key, URL.createObjectURL(blob));
+          }
+        }
+      } catch (e) {}
+    }
+
+    async function resolveOfflineCover(imgEl, track) {
+      if (!('caches' in window) || !track || !imgEl) return;
+      const key = getCoverCacheKey(track);
+      if (coverBlobCache.has(key)) {
+        imgEl.src = coverBlobCache.get(key);
+        return;
+      }
+      try {
+        const cache = await caches.open(COVER_CACHE_NAME);
+        const match = await cache.match(key);
+        if (match) {
+          const blob = await match.blob();
+          if (blob.size > 512) {
+            const objUrl = URL.createObjectURL(blob);
+            coverBlobCache.set(key, objUrl);
+            imgEl.src = objUrl;
+          }
+        }
+      } catch (e) {}
     }
 
     async function refreshCachedIdsIndex() {
@@ -780,6 +791,7 @@
       // Последовательно подгружаем недостающие треки (не перегружая сеть при VPN)
       for (const track of targetTracks) {
         if (!navigator.onLine) break;
+        cacheTrackCover(track);
         if (!state.cachedTrackIds.has(track.id)) {
           await fetchAndCacheTrack(track);
         }
@@ -1032,6 +1044,35 @@
       if (imgEl.src && imgEl.src.includes('hqdefault.jpg') && !imgEl.dataset.triedMq) {
         imgEl.dataset.triedMq = '1';
         imgEl.src = imgEl.src.replace('hqdefault.jpg', 'mqdefault.jpg');
+        return;
+      }
+      if ('caches' in window && !imgEl.dataset.triedCoverCache) {
+        imgEl.dataset.triedCoverCache = '1';
+        const vid = imgEl.getAttribute('data-vid') || '';
+        const key = `https://nikrid.local.cache/cover/${vid || 'unknown'}`;
+        caches.open(COVER_CACHE_NAME).then(c => c.match(key)).then(m => {
+          if (m) return m.blob();
+          return null;
+        }).then(blob => {
+          if (blob && blob.size > 512) {
+            imgEl.src = URL.createObjectURL(blob);
+          } else {
+            imgEl.onerror = null;
+            imgEl.src = "data:image/svg+xml;utf8," + encodeURIComponent(`
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+                <defs>
+                  <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stop-color="#1f2937"/>
+                    <stop offset="100%" stop-color="#090d16"/>
+                  </linearGradient>
+                </defs>
+                <rect width="200" height="200" fill="url(#g)"/>
+                <circle cx="100" cy="100" r="56" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="4"/>
+                <circle cx="100" cy="100" r="16" fill="rgba(255,255,255,0.2)"/>
+              </svg>
+            `);
+          }
+        }).catch(() => {});
         return;
       }
       imgEl.onerror = null;
@@ -1833,11 +1874,11 @@
         return;
       }
 
-      // 3. Играем по сети
+      // 3. Играем по сети мгновенно, не дожидаясь предзагрузки следующих треков
       if (found.audioUrl) {
         scheduleStallWatchdog();
         await startAudioSource(found.audioUrl, reqId);
-        prefetchNextTracks();
+        setTimeout(() => { prefetchNextTracks(); }, 50);
       }
     }
 
@@ -2070,7 +2111,7 @@
       document.getElementById('icon-pause').classList.toggle('hidden', !state.isPlaying);
       
       syncProgressUI();
-      renderQueue();
+      renderQueue(true);
     }
 
     function syncToggleButtonsUI() {
@@ -2142,6 +2183,7 @@
         footer.classList.remove('bottom-[66px]');
         footer.classList.add('bottom-3');
         if (chevron) chevron.classList.remove('rotate-180');
+        renderQueue(true);
       } else {
         page.classList.add('translate-y-full');
         page.classList.remove('translate-y-0');
@@ -2313,7 +2355,15 @@
       prefetchNextTracks();
     }
 
-    function renderQueue() {
+    function scrollQueueToActiveTrack(container) {
+      if (!container) return;
+      const activeEl = container.querySelector('.queue-active-item');
+      if (!activeEl) return;
+      const targetTop = Math.max(0, activeEl.offsetTop - (container.clientHeight * 0.35) + (activeEl.clientHeight * 0.5));
+      container.scrollTo({ top: targetTop, behavior: 'smooth' });
+    }
+
+    function renderQueue(shouldScrollToActive = false) {
       const container = document.getElementById('sp-queue');
       if (!container) return;
 
@@ -2326,7 +2376,7 @@
         const isDraggingThis = track.id === draggedTrackId;
         const isCached = state.cachedTrackIds.has(track.id);
         return `
-          <div ${isDesktop ? 'draggable="true"' : ''} data-id="${track.id}" onclick="playTrack(${track.id})" class="queue-item group flex items-center gap-3 px-3.5 py-2.5 rounded-2xl hover:bg-white/10 cursor-grab active:cursor-grabbing transition-colors duration-150 ${isCur ? 'bg-white/[0.12]' : ''} ${isDraggingThis ? 'dragging-active' : ''}">
+          <div ${isDesktop ? 'draggable="true"' : ''} data-id="${track.id}" onclick="playTrack(${track.id})" class="queue-item group flex items-center gap-3 px-3.5 py-2.5 rounded-2xl hover:bg-white/10 cursor-grab active:cursor-grabbing transition-colors duration-150 ${isCur ? 'queue-active-item bg-white/[0.12]' : ''} ${isDraggingThis ? 'dragging-active' : ''}">
              <div class="hidden lg:flex w-5 justify-center text-gray-400 opacity-60 group-hover:opacity-100 hover:text-white transition-opacity">
                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
              </div>
@@ -2355,6 +2405,10 @@
           item.addEventListener('dragstart', handleDragStart);
           item.addEventListener('dragend', handleDragEnd);
         });
+      }
+
+      if (shouldScrollToActive) {
+        requestAnimationFrame(() => scrollQueueToActiveTrack(container));
       }
     }
 
