@@ -762,8 +762,11 @@
       }
     }
 
+    let _prefetchRunning = false;
     async function prefetchNextTracks() {
-      if (!('caches' in window) || !state.currentTrack || !state.queue.length) return;
+      if (_prefetchRunning || !('caches' in window) || !state.currentTrack || !state.queue.length) return;
+      _prefetchRunning = true;
+      try {
 
       const curIdx = state.queue.findIndex(t => t.id === state.currentTrack.id);
       if (curIdx === -1) return;
@@ -802,6 +805,9 @@
           const ok = await fetchAndCacheTrack(track);
           if (!ok && state._driveCorsBlocked) break;
         }
+      }
+      } finally {
+        _prefetchRunning = false;
       }
     }
 
@@ -1174,7 +1180,7 @@
         const directDriveUrl = driveId ? `https://drive.google.com/uc?export=download&id=${driveId}` : rawUrl;
         const apiDriveUrl = driveId ? `https://www.googleapis.com/drive/v3/files/${driveId}?alt=media&key=${DRIVE_API_KEY}` : rawUrl;
         if (driveId && (rawUrl.includes('drive.google.com') || rawUrl.includes('googleusercontent.com') || rawUrl.includes('googleapis.com'))) {
-          rawUrl = directDriveUrl;
+          rawUrl = apiDriveUrl;
         }
 
         const vid = (item.videoId || '').trim();
@@ -1417,8 +1423,8 @@
 
       audio.addEventListener('error', () => {
         const cur = state.currentTrack;
-        if (cur && cur.apiDriveUrl && audio.src && !audio.src.includes('googleapis.com') && navigator.onLine) {
-          audio.src = cur.apiDriveUrl;
+        if (cur && cur.directDriveUrl && audio.src && audio.src.includes('googleapis.com') && navigator.onLine) {
+          audio.src = cur.directDriveUrl;
           audio.load();
           if (state.isPlaying) audio.play().catch(() => {});
           return;
