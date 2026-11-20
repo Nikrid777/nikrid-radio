@@ -644,7 +644,10 @@
       try {
         const cache = await caches.open(COVER_CACHE_NAME);
         if (await cache.match(key)) return;
-        const res = await fetch(track.image, { mode: 'cors' });
+        const ctrl = new AbortController();
+        const tid = setTimeout(() => ctrl.abort(), 4000);
+        const res = await fetch(track.image, { mode: 'cors', signal: ctrl.signal });
+        clearTimeout(tid);
         if (res && res.ok) {
           await cache.put(key, res.clone());
           const blob = await res.blob();
@@ -1164,8 +1167,10 @@
         let rawUrl = item.audioUrl || item.url || item.file || '';
         const idMatch = rawUrl.match(/[-\w]{25,}/);
         const driveId = idMatch ? idMatch[0] : null;
-        if (driveId && (rawUrl.includes('drive.google.com') || rawUrl.includes('googleusercontent.com'))) {
-          rawUrl = `https://www.googleapis.com/drive/v3/files/${driveId}?alt=media&key=${DRIVE_API_KEY}`;
+        const directDriveUrl = driveId ? `https://drive.google.com/uc?export=download&id=${driveId}` : rawUrl;
+        const apiDriveUrl = driveId ? `https://www.googleapis.com/drive/v3/files/${driveId}?alt=media&key=${DRIVE_API_KEY}` : rawUrl;
+        if (driveId && (rawUrl.includes('drive.google.com') || rawUrl.includes('googleusercontent.com') || rawUrl.includes('googleapis.com'))) {
+          rawUrl = directDriveUrl;
         }
 
         const vid = (item.videoId || '').trim();
@@ -1177,6 +1182,8 @@
           id: item.id || idx + 1,
           videoId: vid,
           driveId: driveId,
+          directDriveUrl: directDriveUrl,
+          apiDriveUrl: apiDriveUrl,
           title: item.title || 'Без названия',
           artist: item.artist || 'Неизвестный исполнитель',
           duration: item.duration || '3:30',
@@ -1405,6 +1412,13 @@
       });
 
       audio.addEventListener('error', () => {
+        const cur = state.currentTrack;
+        if (cur && cur.apiDriveUrl && audio.src && !audio.src.includes('googleapis.com') && navigator.onLine) {
+          audio.src = cur.apiDriveUrl;
+          audio.load();
+          if (state.isPlaying) audio.play().catch(() => {});
+          return;
+        }
         if (state.isPlaying) {
           scheduleStallWatchdog();
         }
