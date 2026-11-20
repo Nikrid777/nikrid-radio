@@ -1,0 +1,9 @@
+{
+  "name": "Nikrid Radio",
+  "short_name": "Nikrid",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#10B981",
+  "icons": []
+}
